@@ -22,23 +22,23 @@ The system is organized around three pillars: lightweight producers that gather 
 graph TD
     subgraph Producers [Data Ingesters - Simple Scripts]
         A1[Finnhub WebSocket Listener] --> Q
-        A2[Scheduled API Pollers <br>(Alpha Vantage, FMP, SEC)] --> Q
-        A3[Scheduled RSS Parsers <br>(Yahoo, Google, IR Feeds)] --> Q
-        A4[Scheduled Social Scrapers <br>(Reddit, Stocktwits)] --> Q
+        A2["Scheduled API Pollers<br>(Alpha Vantage, FMP, SEC)"] --> Q
+        A3["Scheduled RSS Parsers<br>(Yahoo, Google, IR Feeds)"] --> Q
+        A4["Scheduled Social Scrapers<br>(Reddit, Stocktwits)"] --> Q
     end
 
     subgraph Core Infrastructure
-        Q{Message Queue<br>(e.g., Redis, RabbitMQ)}
-        DB[(Unified Storage<br>PostgreSQL)]
+        Q{"Message Queue<br>(e.g., Redis, RabbitMQ)"}
+        DB[("Unified Storage<br>PostgreSQL")]
     end
     
     subgraph Consumers [Intelligent Workers]
-        W1[News Worker<br><b>(Runs the LangGraph Agent)</b>]
-        W2[Social Worker<br><b>(Runs Sentiment Analysis)</b>]
+        W1["News Worker<br><b>(Runs the LangGraph Agent)</b>"]
+        W2["Social Worker<br><b>(Runs Sentiment Analysis)</b>"]
     end
 
     subgraph Outputs
-        AL[Alerts<br>(Slack, Email)]
+        AL["Alerts<br>(Slack, Email)"]
         RP[Reports & Dashboard API]
     end
 
