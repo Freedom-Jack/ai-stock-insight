@@ -28,7 +28,7 @@ graph TD
     end
 
     subgraph Core Infrastructure
-        Q{"Message Queue<br>(e.g., Redis, RabbitMQ)"}
+        Q{"Message Queue<br>(Redis)"}
         DB[("Unified Storage<br>PostgreSQL")]
     end
     
@@ -38,7 +38,7 @@ graph TD
     end
 
     subgraph Outputs
-        AL["Alerts<br>(Slack, Email)"]
+        AL["Alerts<br>(QQ, Wechat, Email)"]
         RP[Reports & Dashboard API]
     end
 
