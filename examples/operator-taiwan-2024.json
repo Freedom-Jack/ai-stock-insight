@@ -1,0 +1,38 @@
+[
+  {
+    "incident_id": "usgs:us7000m9g4",
+    "supplier": "TSMC",
+    "status": "monitoring",
+    "published_at": "2024-04-04T04:00:00Z",
+    "clock_basis": "Conservative replay bound at the end of the April 3 US Eastern filing day. The source gives the date. The intraday release time is unverified.",
+    "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617924000034/a20240403.htm",
+    "locator": "April 3 Form 6-K, earthquake statement after the signatures, paragraphs 4-5 (fab tool recovery and damage).",
+    "title": "TSMC reported over 70% fab tool recovery within ten hours. Some damaged tools partially affected operations, while critical tools escaped damage.",
+    "uncertainty": "Tool recovery measures equipment readiness. The statement gives no estimate of lost production for any individual customer.",
+    "next_check": "Check TSMC's next operational statement for the remaining lines and any change to its revenue outlook."
+  },
+  {
+    "incident_id": "usgs:us7000m9g4",
+    "supplier": "TSMC",
+    "status": "narrowed",
+    "published_at": "2024-04-05T13:09:11Z",
+    "clock_basis": "SEC submission 0001046179-24-000038, ACCEPTANCE-DATETIME 20240405090911 Eastern daylight time.",
+    "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617924000038/a20240405.htm",
+    "locator": "April 5 Form 6-K, updated earthquake statement after the signatures, paragraph beginning 'Apart from certain production lines'.",
+    "title": "TSMC reported that equipment at its Taiwan fabs had largely recovered, with exceptions on some lines. It maintained its annual revenue growth guidance.",
+    "uncertainty": "TSMC was still assessing damage. The filing leaves customer-specific production and shipments unresolved.",
+    "next_check": "Check the next TSMC disclosure for recovery of the remaining lines and for quantified losses."
+  },
+  {
+    "incident_id": "usgs:us7000m9g4",
+    "supplier": "TSMC",
+    "status": "closed",
+    "published_at": "2024-04-18T11:26:54Z",
+    "clock_basis": "SEC submission 0001046179-24-000050, ACCEPTANCE-DATETIME 20240418072654 Eastern daylight time.",
+    "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617924000050/a20240418.htm",
+    "locator": "April 18 Form 6-K, earthquake impact statement after the signatures, paragraphs 2 and 4-5 (recovery, wafer scrap and Q2 margin).",
+    "title": "TSMC reported full recovery by the end of the third day. It scrapped some wafers and estimated about 50 basis points of damage to its second-quarter gross margin.",
+    "uncertainty": "The margin estimate is TSMC's. Effects on any individual customer's deliveries and margins remain undisclosed.",
+    "next_check": "Close the operational recovery watch. Reopen if TSMC discloses a renewed disruption linked to this event."
+  }
+]

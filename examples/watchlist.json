@@ -1,0 +1,65 @@
+{
+  "min_magnitude": 6.0,
+  "radius_km": 200,
+  "sites": [
+    {
+      "supplier": "TSMC",
+      "site": "Fab 12A, Hsinchu (regional proxy)",
+      "latitude": 24.8279,
+      "longitude": 121.014,
+      "coordinate_basis": "Hsinchu weather station 467571 is a regional reference point. Distance is epicenter to station.",
+      "coordinates_url": "https://service.cca.gov.tw/File/Get/cca/zh-tw/IFarR2AcIt908tR",
+      "coordinate_locator": "Taiwan 2018 National Communication, table 5.1.1, Hsinchu",
+      "editions": [
+        {
+          "checked_on": "2024-03-01",
+          "review_by": "2024-05-01",
+          "site_url": "https://investor.tsmc.com/static/annualReports/2022/english/ebook/files/basic-html/page184.html",
+          "site_locator": "2022 annual report, Contact Information, Corporate Headquarters & Fab 12A",
+          "relationships": [
+            {
+              "ticker": "AMD",
+              "filed_on": "2024-01-31",
+              "source_url": "https://www.sec.gov/Archives/edgar/data/2488/000000248824000012/amd-20231230.htm",
+              "locator": "2023 Form 10-K, Item 1A, Operational and Technology Risks",
+              "scope": "AMD relies on TSMC for microprocessor and GPU wafers at 7 nm and smaller nodes.",
+              "limit": "AMD also uses GlobalFoundries for larger nodes. The allocation to Fab 12A is unknown."
+            },
+            {
+              "ticker": "NVDA",
+              "filed_on": "2024-02-21",
+              "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm",
+              "locator": "FY2024 Form 10-K, Item 1, Manufacturing",
+              "scope": "NVIDIA names TSMC as a wafer foundry.",
+              "limit": "NVIDIA also uses Samsung. The allocation to Fab 12A is unknown."
+            }
+          ]
+        },
+        {
+          "checked_on": "2026-11-05",
+          "review_by": "2027-02-01",
+          "site_url": "https://investor.tsmc.com/sites/ir/annual-report/2025/2025%20TSMC%20Annual%20Report.E.pdf",
+          "site_locator": "2025 annual report, Contact Information, Corporate Headquarters & Fab 12A",
+          "relationships": [
+            {
+              "ticker": "AMD",
+              "filed_on": "2026-11-04",
+              "source_url": "https://ir.amd.com/financial-information/sec-filings/content/0000002488-26-000191/amd-20260926.htm",
+              "locator": "Q3 2026 Form 10-Q, Part II, Item 1A, Operational and Technology Risks",
+              "scope": "AMD relies on TSMC for microprocessor and GPU wafers at 7 nm and smaller nodes.",
+              "limit": "AMD also uses GlobalFoundries for larger nodes. The allocation to Fab 12A is unknown."
+            },
+            {
+              "ticker": "NVDA",
+              "filed_on": "2026-02-25",
+              "source_url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/nvda-20260125.htm",
+              "locator": "FY2026 Form 10-K, Item 1, Manufacturing",
+              "scope": "NVIDIA names TSMC as a wafer foundry.",
+              "limit": "NVIDIA also uses Samsung. The allocation to Fab 12A is unknown."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

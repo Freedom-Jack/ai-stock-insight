@@ -1,0 +1,35 @@
+{
+  "type": "FeatureCollection",
+  "provenance": {
+    "owner": "U.S. Geological Survey, National Earthquake Information Center",
+    "source_product": "urn:usgs-product:us:origin:us7000m9g4:1712103250040",
+    "product_url": "https://earthquake.usgs.gov/product/origin/us7000m9g4/us/1712103250040/quakeml.xml",
+    "product_history": "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&eventid=us7000m9g4&includesuperseded=true",
+    "method": "Reconstructed GeoJSON summary from the dated reviewed origin. Magnitude (Mww), origin time, coordinates and depth are from the preferred origin and magnitude in the QuakeML. updated is the product updateTime. For replay only, generated is set to the archive indexTime. The title is a descriptive label and url points to the dated evidence. No historical feed receipt or local delivery time is available."
+  },
+  "metadata": {
+    "generated": 1712103256677,
+    "count": 1,
+    "status": 200
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "us7000m9g4",
+      "properties": {
+        "title": "M 7.4 earthquake, Taiwan",
+        "type": "earthquake",
+        "status": "reviewed",
+        "mag": 7.4,
+        "magType": "mww",
+        "time": 1712102291228,
+        "updated": 1712103250040,
+        "url": "https://earthquake.usgs.gov/product/origin/us7000m9g4/us/1712103250040/quakeml.xml"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [121.5616, 23.8190, 34.75]
+      }
+    }
+  ]
+}

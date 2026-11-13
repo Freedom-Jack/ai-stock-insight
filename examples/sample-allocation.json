@@ -1,0 +1,13 @@
+{
+  "kind": "sample_allocation",
+  "hypothetical": true,
+  "account_scope": "Fixed illustrative allocation for the local monitor",
+  "currency": "USD",
+  "total": "100000.00",
+  "cash": "60000.00",
+  "positions": [
+    {"ticker": "NVDA", "type": "stock", "value": "10000.00"},
+    {"ticker": "AMD", "type": "stock", "value": "5000.00"},
+    {"ticker": "MSFT", "type": "stock", "value": "25000.00"}
+  ]
+}

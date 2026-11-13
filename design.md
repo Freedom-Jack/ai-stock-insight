@@ -1,5 +1,7 @@
 ﻿# AI Stock Insight - Design Document
 
+**Implementation status, November 2026.** Local v1 schedules USGS earthquake collection and TSMC disclosure discovery, links evidence to a configurable watchlist, and delivers portfolio-aware terminal alerts alongside a local HTML inbox with coverage warnings. The sections below preserve the original architecture proposal. Recheck source access and pricing before adopting additional feeds. See the [current implementation, demo and tests](README.md).
+
 ## Goals
 - **Immediate Alerts:** Detect high-impact news events for a configurable watchlist of stock tickers and raise immediate alerts.
 - **Actionable Summaries:** Generate concise, human-readable summaries for every alert-worthy item so operators can act quickly.

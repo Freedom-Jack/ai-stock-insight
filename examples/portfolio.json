@@ -1,0 +1,14 @@
+{
+  "hypothetical": true,
+  "account_scope": "Single illustrative account",
+  "valued_at": "2024-04-02T20:00:00Z",
+  "available_at": "2024-04-02T20:05:00Z",
+  "currency": "USD",
+  "total": "100000.00",
+  "cash": "60000.00",
+  "positions": [
+    {"ticker": "NVDA", "type": "stock", "value": "10000.00"},
+    {"ticker": "AMD", "type": "stock", "value": "5000.00"},
+    {"ticker": "MSFT", "type": "stock", "value": "25000.00"}
+  ]
+}
