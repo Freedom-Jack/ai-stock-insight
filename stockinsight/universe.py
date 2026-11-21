@@ -5,15 +5,14 @@ import hashlib
 import io
 import json
 import os
-from datetime import datetime, timedelta, timezone
-from itertools import chain
-from pathlib import Path
 import re
 import stat
 import time
+from datetime import UTC, datetime, timedelta
+from itertools import chain
+from pathlib import Path
 
 from .db import instant, now, uid, write
-
 
 SCHEMA = """
 CREATE TABLE companies (
@@ -82,9 +81,24 @@ CREATE TABLE exposures (
 );
 """
 
+IDENTITY_MIGRATION = """
+CREATE TABLE watchlist_previews (
+    snapshot_id TEXT PRIMARY KEY REFERENCES watchlist_snapshots(id),
+    bindings_hash TEXT NOT NULL, affected TEXT NOT NULL
+);
+CREATE TABLE instrument_corrections (
+    snapshot_id TEXT NOT NULL REFERENCES watchlist_snapshots(id),
+    instrument_id TEXT NOT NULL REFERENCES instruments(id),
+    before_fields TEXT NOT NULL, after_fields TEXT NOT NULL,
+    commit_seq INTEGER NOT NULL REFERENCES commits(seq),
+    PRIMARY KEY(snapshot_id,instrument_id)
+);
+"""
+
 MAX_BYTES = 1024 * 1024
 MAX_ROWS = 5000
 FIELDS = ("ticker", "conid", "security_type", "listing_exchange", "routing_exchange", "currency")
+LISTING = ("ticker", "listing_exchange", "security_type", "currency")
 # Curated common-share listing identities, backed by the linked filing cover pages.
 _ISSUERS = {
     ("NVDA", "NASDAQ", "STK", "USD"): (
@@ -106,7 +120,7 @@ _FIELDS_RX = {
     "routing_exchange": r"[A-Z][A-Z0-9.]{0,14}",
     "currency": r"[A-Z]{3}",
 }
-_ACCOUNT = re.compile(r"(?:[UFD]|DU|DF|FA|I|FAM|UAM|UAF)[0-9]{4,}", re.I)
+_ACCOUNT = re.compile(r"(?:[UFD]|DU|DF|FA|I|FAM|UAM|UAF)[0-9]{4,}", re.IGNORECASE)
 _PRIVATE_LABELS = {
     "ACCOUNT",
     "ACCOUNTS",
@@ -155,8 +169,8 @@ def _project(fields):
         if value and (
             not original.isascii()
             or not re.fullmatch(_FIELDS_RX[field], value, re.ASCII)
-            or _ACCOUNT.fullmatch(value)
-            or value in _PRIVATE_LABELS
+            or _ACCOUNT.search(value)
+            or (value in _PRIVATE_LABELS and not (field in {"ticker", "security_type"} and value == "CASH"))
         ):
             raise ValueError("An instrument field contains an unsupported identifier.")
         entry[field] = value or None
@@ -252,6 +266,29 @@ def _snapshot(conn, snapshot_id):
     snap = dict(_row(conn, "watchlist_snapshots", snapshot_id))
     snap["entries"] = json.loads(snap["entries"])
     snap["membership_complete"] = bool(snap["membership_complete"])
+    source = _row(conn, "watchlist_sources", snap["source_id"])
+    preview = conn.execute(
+        "SELECT affected,bindings_hash FROM watchlist_previews WHERE snapshot_id=?", (snapshot_id,)
+    ).fetchone()
+    snap["source_alias"] = source["alias"]
+    snap["affected"] = json.loads(preview["affected"]) if preview else []
+    snap["confirmable"] = bool(
+        preview
+        and snap["membership_complete"]
+        and snap["state"] == "candidate"
+        and source["last_observation_id"] == snapshot_id
+        and source["active_snapshot_id"] == snap["base_snapshot_id"]
+    )
+    if snap["state"] == "candidate" and not preview:
+        snap["reason"] = "Import this snapshot again to review its current identity bindings."
+    elif snap["confirmable"]:
+        try:
+            _, _, binding_hash, _ = _identity_plan(conn, snap["source_id"], snap["entries"])
+            snap["confirmable"] = binding_hash == preview["bindings_hash"]
+        except ValueError:
+            snap["confirmable"] = False
+        if not snap["confirmable"]:
+            snap["reason"] = "Identity bindings changed. Import a fresh snapshot before confirmation."
     return snap
 
 
@@ -259,7 +296,7 @@ def _source(conn, source_id, mode, seq):
     if (
         not isinstance(source_id, str)
         or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", source_id)
-        or _ACCOUNT.fullmatch(source_id)
+        or _ACCOUNT.search(source_id)
         or source_id.upper() in _PRIVATE_LABELS
     ):
         raise ValueError("Use a short local source ID such as personal.")
@@ -293,27 +330,28 @@ def rename_source(conn, source_id, alias):
 def _instrument_id(conn, entry, source_id):
     key = _key(entry, source_id)
     row = conn.execute("SELECT id FROM instruments WHERE identity_key=?", (key,)).fetchone()
-    if row:
-        return row["id"]
-    # A missing conid may be filled in later or omitted from a new observation.
-    # Require the full listing identity and never alias a second contract ID.
-    fields = ("ticker", "listing_exchange", "security_type", "currency")
-    if any(not entry[f] for f in fields) or entry["security_type"] not in {"STK", "ADR", "ETF"}:
-        return None
+    by_key = row["id"] if row else None
+    if any(not entry[f] for f in LISTING) or entry["security_type"] not in {"STK", "ADR", "ETF"}:
+        return by_key
     matches = conn.execute(
         """SELECT id,conid FROM instruments WHERE ticker=?
                               AND listing_exchange=? AND security_type=? AND currency=?""",
-        tuple(entry[f] for f in fields),
+        tuple(entry[f] for f in LISTING),
     ).fetchall()
-    if len(matches) == 1 and (not entry["conid"] or matches[0]["conid"] is None):
-        return matches[0]["id"]
-    return None
+    if len(matches) > 1:
+        raise ValueError("The supplied listing has conflicting saved contract bindings.")
+    if matches:
+        matched = matches[0]
+        if (by_key and matched["id"] != by_key) or (
+            entry["conid"] and matched["conid"] and entry["conid"] != matched["conid"]
+        ):
+            raise ValueError("The supplied listing and contract refer to different saved identities.")
+        return matched["id"]
+    return by_key
 
 
-def _materialize(conn, entry, source_id, stamp, seq):
-    prev_id = _instrument_id(conn, entry, source_id)
-    old = _row(conn, "instruments", prev_id) if prev_id else None
-    values = {f: entry[f] or (old[f] if old else None) for f in FIELDS}
+def _materialize(conn, values, old, source_id, stamp, seq):
+    prev_id = old["id"] if old else None
     key = _key(values, source_id)
     issuer = _issuer(values)
     company_id = old["company_id"] if old and values["conid"] else None
@@ -363,26 +401,113 @@ def _materialize(conn, entry, source_id, stamp, seq):
     return instrument_id
 
 
-def _identity_conflict(conn, entries):
+def _label(values):
+    listing = " · ".join(values[k] for k in LISTING if values[k])
+    contract = "IBKR contract " + values["conid"] if values["conid"] else ""
+    return " · ".join(filter(None, [listing, contract]))
+
+
+def _identity_plan(conn, source_id, entries):
+    """Resolve once against a locked database. Bind the preview to every touched identity."""
+    active = {
+        r["id"]: r
+        for r in conn.execute(
+            """SELECT i.* FROM instruments i JOIN source_memberships m ON m.instrument_id=i.id
+           WHERE m.source_id=? AND m.status='active' ORDER BY i.id""",
+            (source_id,),
+        )
+    }
+    actions, bindings, resolved = [], [], []
+    selected, listings = set(), {}
+    weak_symbols = set()
     for entry in entries:
-        if not entry["conid"]:
-            continue
-        known = conn.execute(
-            """SELECT i.*,c.cik FROM instruments i LEFT JOIN companies c ON c.id=i.company_id
-                                WHERE i.provider_namespace='ibkr' AND i.conid=?""",
-            (entry["conid"],),
-        ).fetchone()
-        if known:
-            issuer = _issuer({f: entry[f] or known[f] for f in FIELDS})
-            if issuer and known["cik"] and issuer[1] != known["cik"]:
-                return True
-    return False
+        saved_id = _instrument_id(conn, entry, source_id)
+        old = _row(conn, "instruments", saved_id) if saved_id else None
+        values = {f: entry[f] or (old[f] if old else None) for f in FIELDS}
+        # Routing is source-specific. Preserve the first route on the shared
+        # row; each snapshot retains its own observed route in full.
+        if old and old["routing_exchange"]:
+            values["routing_exchange"] = old["routing_exchange"]
+        if old and values != entry:
+            _instrument_id(conn, values, source_id)
+        key = _key(values, source_id)
+        if values["ticker"] == "CASH" and not (
+            all(values[k] for k in LISTING) and values["security_type"] in {"STK", "ADR", "ETF"}
+        ):
+            raise ValueError("A label shared with account reports requires a fully specified stock listing.")
+        listing = tuple(values[k] for k in LISTING)
+        if all(listing) and values["security_type"] in {"STK", "ETF", "ADR"}:
+            if listing in listings and listings[listing] != values["conid"]:
+                raise ValueError("The same listing has conflicting supplied contract IDs.")
+            listings[listing] = values["conid"]
+        if saved_id and saved_id in selected:
+            raise ValueError("Several supplied entries would overwrite the same instrument.")
+        if saved_id:
+            selected.add(saved_id)
+        if key.startswith("provisional:"):
+            weak_symbols.add(values["ticker"])
+        other_sources = []
+        if old:
+            other_sources = [
+                r[0]
+                for r in conn.execute(
+                    """SELECT source_id FROM source_memberships WHERE instrument_id=? AND status='active'
+                   AND source_id!=? ORDER BY source_id""",
+                    (saved_id, source_id),
+                )
+            ]
+        corrected = bool(old and any(old[k] and old[k] != values[k] for k in LISTING))
+        if old and old["company_id"]:
+            issuer = _issuer(values)
+            company = _row(conn, "companies", old["company_id"])
+            if (issuer and company["cik"] != issuer[1]) or (corrected and not issuer):
+                raise ValueError("A saved issuer identity conflicts with the supplied contract metadata.")
+        if corrected:
+            if other_sources:
+                raise ValueError("The correction conflicts with another source's active instrument binding.")
+            if not old["company_id"] and _issuer(values):
+                raise ValueError("A listing correction cannot assign a different issuer to its history.")
+            owns_history = conn.execute(
+                "SELECT 1 FROM source_memberships WHERE source_id=? AND instrument_id=?",
+                (source_id, saved_id),
+            ).fetchone()
+            if not owns_history:
+                raise ValueError("Only a source with prior membership can propose an identity correction.")
+            actions.append(
+                {"action": "correct", "instrument_id": saved_id, "label": f"{_label(old)} → {_label(values)}"}
+            )
+        if saved_id not in active:
+            actions.append({"action": "add", "instrument_id": saved_id, "label": _label(values)})
+        before = {k: old[k] for k in (*FIELDS, "company_id")} if old else None
+        bindings.append([saved_id, before, other_sources, key])
+        resolved.append((values, old, corrected))
+    weakened = False
+    for saved_id, old in active.items():
+        if saved_id not in selected:
+            actions.append({"action": "remove", "instrument_id": saved_id, "label": _label(old)})
+            weakened |= old["ticker"] in weak_symbols and not old["identity_key"].startswith("provisional:")
+    encoded = json.dumps([bindings, actions], separators=(",", ":"), sort_keys=True)
+    return resolved, actions, hashlib.sha256(encoded.encode()).hexdigest(), weakened
 
 
-def _activate(conn, snap, seq, *, confirmation=False):
+def _activate(conn, snap, seq, resolved, *, confirmation=False):
     source_id, stamp = snap["source_id"], snap["observed_at"]
-    for order, entry in enumerate(snap["entries"]):
-        instrument_id = _materialize(conn, entry, source_id, stamp, seq)
+    for order, (values, old, corrected) in enumerate(resolved):
+        if corrected and not confirmation:
+            raise ValueError("An instrument correction requires explicit review.")
+        instrument_id = _materialize(conn, values, old, source_id, stamp, seq)
+        if corrected:
+            updated = _row(conn, "instruments", instrument_id)
+            conn.execute(
+                "INSERT INTO instrument_corrections VALUES(?,?,?,?,?)",
+                (
+                    snap["id"],
+                    old["id"],
+                    json.dumps({f: old[f] for f in (*FIELDS, "company_id")}),
+                    json.dumps({f: updated[f] for f in (*FIELDS, "company_id")}),
+                    seq,
+                ),
+            )
         conn.execute(
             """INSERT INTO source_memberships VALUES (?,?,?,?,?,'active',?,?)
                         ON CONFLICT(source_id,instrument_id) DO UPDATE SET
@@ -441,9 +566,12 @@ def _store_snapshot(conn, entries, source_id, mode, complete, problem, *, unavai
     digest = None if problem else hashlib.sha256(projected.encode()).hexdigest()
     with write(conn) as seq:
         source = _source(conn, source_id, mode, seq)
-        if entries and _identity_conflict(conn, entries):
+        try:
+            resolved, affected, binding_hash, weakened = _identity_plan(conn, source_id, entries)
+        except ValueError as exc:
             entries, projected, digest = [], "[]", None
-            problem = "A saved contract ID conflicts with the supplied issuer identity."
+            resolved, affected, binding_hash, weakened = [], [], None, False
+            problem = str(exc)
         prev = _row(conn, "watchlist_snapshots", source["last_observation_id"])
         stamp = now()
         if (
@@ -458,24 +586,19 @@ def _store_snapshot(conn, entries, source_id, mode, complete, problem, *, unavai
                     "UPDATE watchlist_sources SET last_success_at=?,commit_seq=? WHERE id=?",
                     (stamp, seq, source_id),
                 )
-            return _snapshot(conn, prev["id"])
-        active_rows = conn.execute(
-            """SELECT i.id,i.ticker,i.identity_key FROM instruments i
-            JOIN source_memberships sm ON sm.instrument_id=i.id
-            WHERE sm.source_id=? AND sm.status='active'""",
-            (source_id,),
-        ).fetchall()
-        active_ids = {r["id"] for r in active_rows}
-        identities = [(_instrument_id(conn, e, source_id), _key(e, source_id)) for e in entries]
-        existing = {saved for saved, _ in identities if saved}
-        new_keys = {key for saved, key in identities if not saved}
-        added = len(new_keys) + len(existing.difference(active_ids))
-        removed = len(active_ids.difference(existing))
-        lost_symbols = {
-            r["ticker"]
-            for r in active_rows
-            if r["id"] not in existing and not r["identity_key"].startswith("provisional:")
-        }
+                return _snapshot(conn, prev["id"])
+            saved = conn.execute(
+                "SELECT bindings_hash FROM watchlist_previews WHERE snapshot_id=?", (prev["id"],)
+            ).fetchone()
+            if (prev["state"] == "rejected" and problem) or (
+                prev["state"] == "candidate" and saved and saved["bindings_hash"] == binding_hash
+            ):
+                return _snapshot(conn, prev["id"])
+        added = sum(a["action"] == "add" for a in affected)
+        removed = sum(a["action"] == "remove" for a in affected)
+        active_count = conn.execute(
+            "SELECT count(*) FROM source_memberships WHERE source_id=? AND status='active'", (source_id,)
+        ).fetchone()[0]
         if problem:
             state, reason = "rejected", problem
             added = removed = 0
@@ -483,11 +606,11 @@ def _store_snapshot(conn, entries, source_id, mode, complete, problem, *, unavai
             state, reason = "candidate", "Partial observation. Supply a complete selected list."
         elif not entries:
             state, reason = "candidate", "Empty replacement requires review."
-        elif any(
-            e["ticker"] in lost_symbols and _key(e, source_id).startswith("provisional:") for e in entries
-        ):
+        elif any(a["action"] == "correct" for a in affected):
+            state, reason = "candidate", "Review the proposed correction to a saved instrument identity."
+        elif weakened:
             state, reason = "candidate", "Replacement omits identifiers from a previously identified listing."
-        elif active_ids and removed >= len(active_ids) / 2:
+        elif active_count and removed >= active_count / 2:
             state, reason = "candidate", "Replacement removes at least half the active membership."
         else:
             state, reason = "candidate", ""
@@ -518,8 +641,12 @@ def _store_snapshot(conn, entries, source_id, mode, complete, problem, *, unavai
                         commit_seq=? WHERE id=?""",
             (mode, snap_id, status, seq, source_id),
         )
+        if state == "candidate" and reason:
+            conn.execute(
+                "INSERT INTO watchlist_previews VALUES(?,?,?)", (snap_id, binding_hash, json.dumps(affected))
+            )
         if not reason:
-            _activate(conn, _snapshot(conn, snap_id), seq)
+            _activate(conn, _snapshot(conn, snap_id), seq, resolved)
         return _snapshot(conn, snap_id)
 
 
@@ -539,7 +666,20 @@ def accept_candidate(conn, snapshot_id):
             or source["active_snapshot_id"] != snap["base_snapshot_id"]
         ):
             raise ValueError("Only the latest complete replacement candidate can be confirmed.")
-        _activate(conn, snap, seq, confirmation=True)
+        preview = conn.execute(
+            "SELECT bindings_hash FROM watchlist_previews WHERE snapshot_id=?", (snapshot_id,)
+        ).fetchone()
+        try:
+            resolved, _, current_hash, _ = _identity_plan(conn, snap["source_id"], snap["entries"])
+            if not preview or current_hash != preview["bindings_hash"]:
+                raise ValueError("Identity bindings changed. Import a fresh snapshot before confirmation.")
+        except ValueError as exc:
+            conn.execute(
+                "UPDATE watchlist_snapshots SET state='rejected',reason=?,commit_seq=? WHERE id=?",
+                (str(exc), seq, snapshot_id),
+            )
+            return _snapshot(conn, snapshot_id)
+        _activate(conn, snap, seq, resolved, confirmation=True)
         return _snapshot(conn, snapshot_id)
 
 
@@ -678,9 +818,9 @@ def universe(conn):
     for row in conn.execute("SELECT * FROM watchlist_sources ORDER BY id"):
         source = dict(row)
         observed = source["last_success_at"]
-        source["stale"] = not observed or datetime.now(timezone.utc) - datetime.fromisoformat(
-            observed
-        ) > timedelta(days=7)
+        source["stale"] = not observed or datetime.now(UTC) - datetime.fromisoformat(observed) > timedelta(
+            days=7
+        )
         if source["status"] == "ready" and source["stale"]:
             source["status"] = "stale"
         sources.append(source)

@@ -2,6 +2,7 @@
 
 import hmac
 import secrets
+from base64 import b64encode
 from contextlib import closing
 from pathlib import Path
 from urllib.parse import parse_qsl
@@ -26,13 +27,16 @@ def application(path, port, login_code):
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     host = f"127.0.0.1:{port}"
     origin = f"http://{host}"
-    session, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    # HTTP authentication is scoped to an origin (including its port).
+    # Chromium performs the challenge/response in its native credential dialog.
+    authorization = "Basic " + b64encode(f"research:{login_code}".encode()).decode("ascii")
+    csrf = secrets.token_urlsafe(32)
 
     def render(req, view, **values):
         return TEMPLATES.TemplateResponse(
             request=req,
             name="desk.html",
-            context={"view": view, "csrf": csrf if view != "login" else "", **values},
+            context={"view": view, "csrf": csrf, **values},
         )
 
     @app.middleware("http")
@@ -43,19 +47,19 @@ def application(path, port, login_code):
             return PlainTextResponse("Unsupported method", status_code=405)
         if req.method == "POST" and req.headers.getlist("origin") != [origin]:
             return PlainTextResponse("Unrecognized browser origin", status_code=403)
-        logged_in = same(req.cookies.get("insight_session"), session)
-        if not logged_in and req.url.path != "/login":
-            response = (
-                RedirectResponse("/login", 303)
-                if req.method == "GET"
-                else PlainTextResponse("Sign in first", 401)
+        credentials = req.headers.getlist("authorization")
+        if len(credentials) != 1 or not same(credentials[0], authorization):
+            response = PlainTextResponse(
+                "Enter username research and the password from this desk's terminal.",
+                status_code=401,
+                headers={"WWW-Authenticate": f'Basic realm="Stock Insight {port}"'},
             )
         else:
             response = await call_next(req)
         response.headers.update(
             {
                 "Cache-Control": "no-store",
-                "Referrer-Policy": "no-referrer",
+                "Referrer-Policy": "same-origin",
                 "X-Content-Type-Options": "nosniff",
                 "X-Frame-Options": "DENY",
                 "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
@@ -63,7 +67,7 @@ def application(path, port, login_code):
         )
         return response
 
-    async def fields(req, *, login=False):
+    async def fields(req):
         if req.headers.get("content-type", "").split(";")[0] != "application/x-www-form-urlencoded":
             raise ValueError("Expected a browser form")
         raw = bytearray()
@@ -77,7 +81,7 @@ def application(path, port, login_code):
         data = dict(pairs)
         if len(data) != len(pairs):
             raise ValueError("Repeated form field")
-        if not login and not same(data.pop("csrf", None), csrf):
+        if not same(data.pop("csrf", None), csrf):
             raise PermissionError
         return data
 
@@ -89,19 +93,6 @@ def application(path, port, login_code):
     @app.exception_handler(PermissionError)
     async def forbidden(req, exc):
         return PlainTextResponse("Browser session verification failed", 403)
-
-    @app.get("/login")
-    def login(req: Request):
-        return render(req, "login")
-
-    @app.post("/login")
-    async def authenticate(req: Request):
-        data = await fields(req, login=True)
-        if not same(data.get("code"), login_code):
-            return PlainTextResponse("Incorrect sign-in code", 403)
-        resp = RedirectResponse("/", 303)
-        resp.set_cookie("insight_session", session, httponly=True, samesite="strict", path="/")
-        return resp
 
     def page(req, db, view, **kw):
         return render(req, view, fixture=is_fixture(db), request_key=uid("request"), **kw)
@@ -203,7 +194,15 @@ def application(path, port, login_code):
                     request_key=key,
                 )
             elif action == "continue":
-                job_id = research.continuation(db, data.get("case", ""))
+                key = data.get("key", "")
+                if not key.startswith("request_") or len(key) != 32:
+                    raise ValueError("Invalid continuation form")
+                job_id = research.continuation(
+                    db,
+                    data.get("case", ""),
+                    request_key=key,
+                    expected_revision=int(data.get("base_revision", "")),
+                )
             elif action == "run":
                 job_id = data.get("job", "")
             else:

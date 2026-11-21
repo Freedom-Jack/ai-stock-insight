@@ -378,6 +378,39 @@ def search(conn, instrument_id, cutoff=None, *, query=None, fixture=None, commit
     return _read(conn, instrument_id, cutoff, fixture, commit_seq, query=query)
 
 
+def still_supported(conn, passage, cutoff):
+    """Check the source's latest eligible edition inside the submission transaction."""
+    rows = conn.execute(
+        """
+        SELECT p.locator,p.text,p.financial FROM evidence_passages p WHERE p.document_id=(
+            SELECT d.id FROM documents d
+            WHERE d.instrument_id=? AND d.origin=? AND d.source_url=? AND d.fixture=?
+              AND d.commit_seq>? AND EXISTS (SELECT 1 FROM evidence_passages v WHERE v.document_id=d.id
+                                             AND (? IS NULL OR v.available_at<=?))
+            ORDER BY d.commit_seq DESC LIMIT 1
+        ) AND (? IS NULL OR p.available_at<=?)
+        """,
+        (
+            passage["instrument_id"],
+            passage["origin"],
+            passage["source_url"],
+            int(passage["fixture"]),
+            passage["commit_seq"],
+            cutoff,
+            cutoff,
+            cutoff,
+            cutoff,
+        ),
+    ).fetchall()
+    if not rows:
+        return True
+    if passage["financial"]:
+        # The same cell can move within a provider response. Compare the dated
+        # financial observation including its issuer, basis, units and value.
+        return any(r["financial"] and json.loads(r["financial"]) == passage["financial"] for r in rows)
+    return any(r["locator"] == passage["locator"] and r["text"] == passage["text"] for r in rows)
+
+
 def get(conn, instrument_id, passage_id, cutoff=None, *, fixture=None, commit_seq=None):
     rows = _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=passage_id)
     if not rows:
@@ -405,6 +438,40 @@ def _period(fact):
     if start > end:
         raise ValueError("Invalid period order.")
     return start, end
+
+
+def supports_actual(fact, cik):
+    """Check the financial meaning of one observation before it supports an assessment."""
+    if not cik or fact.get("company") != "CIK" + cik or fact.get("role") != "actual":
+        return False
+    try:
+        _number(fact.get("value"))
+        _period(fact)
+    except ValueError:
+        return False
+    if not all(fact.get(k) for k in ("period_label", "duration", "basis", "unit", "share_basis")):
+        return False
+    metric, unit, basis = fact.get("metric", ""), fact["unit"].casefold(), fact["share_basis"].casefold()
+    currency = (fact.get("currency") or "").casefold()
+    if metric in {"gross_margin", "operating_margin", "dividend_yield"}:
+        return unit in {"%", "percent", "percentage", "ratio"} and basis == "total"
+    if metric == "shares_outstanding":
+        return unit in {"shares", "thousand shares", "million shares", "billion shares"}
+    if not re.fullmatch(r"[a-z]{3}", currency):
+        return False
+    if metric in {"earnings_per_share", "dividend_per_share", "revenue_per_share"}:
+        return unit in {currency + " per share", currency + "/share", currency + "/shares"} and basis in {
+            "basic",
+            "diluted",
+            "common share",
+            "per share",
+        }
+    if metric in {"revenue", "net_income", "free_cash_flow", "share_repurchases"}:
+        return basis == "total" and unit in {
+            currency,
+            *(f"{currency} {scale}" for scale in ("thousand", "million", "billion", "trillion")),
+        }
+    return False
 
 
 def compare(current, baseline, kind):

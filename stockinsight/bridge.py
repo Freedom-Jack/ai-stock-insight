@@ -3,10 +3,9 @@
 import json
 import re
 
-from . import evidence, providers
+from . import evidence, gaps, providers
 from .db import is_fixture, now, uid, write
 from .research import authorized, encode, renew
-
 
 GAPS = {
     "historical_consensus": (
@@ -25,7 +24,7 @@ GAPS = {
     ),
     "search_evidence": (
         "history_missing",
-        "No eligible source passages were found for this listing and cutoff.",
+        "The retrieved passages have not established the requested observations for this listing and cutoff.",
         "Keep the question open.",
         "Capture a permitted primary source with verified availability.",
         "Retrieve a versioned, relevant passage available by the case cutoff.",
@@ -54,6 +53,7 @@ TOOLS = {
     "historical_consensus": "Check access to pre-release Street consensus.",
     "price_context": "Check access to timed prices for the case instrument.",
     "capture_public": "Capture a release or financial fact from an approved issuer or SEC route.",
+    "record_gap": "Record a missing metric and fiscal period against this run's latest scoped evidence search.",
 }
 PARAMETERS = {
     "list_capabilities": set(),
@@ -63,6 +63,7 @@ PARAMETERS = {
     "historical_consensus": set(),
     "price_context": set(),
     "capture_public": {"provider"},
+    "record_gap": {"metric", "period", "attempt_receipt_id"},
 }
 
 
@@ -125,6 +126,9 @@ class Bridge:
                 if key in result
             }
             return result["status"], data, []
+        if name == "record_gap":
+            # Its referenced read is checked atomically with appending the declaration below.
+            return "ok", {}, []
         return "unavailable", {"message": GAPS[name][1]}, []
 
     def call(self, name, args):
@@ -134,6 +138,8 @@ class Bridge:
         if not isinstance(args, dict) or set(args) != PARAMETERS[name]:
             raise ValueError("Invalid tool parameters")
         for key, value in args.items():
+            if key == "period" and name == "record_gap" and isinstance(value, str) and 1 <= len(value) <= 64:
+                continue
             if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,96}", value):
                 raise ValueError("Invalid tool parameter")
             if key == "provider" and value not in ("issuer", "sec"):
@@ -152,19 +158,9 @@ class Bridge:
             status, data, ids = "invalid_input", {"message": str(exc)}, []
         with write(self.db) as seq:
             run = authorized(self.db, self.lease)
-            gap = None
-            if status != "ok" and name in GAPS:
-                reason, impact, fallback, remedy, example = GAPS[name]
-                self.db.execute(
-                    "INSERT INTO capability_gaps(id,case_id,capability,status,impact,fallback,"
-                    "remedy,acceptance_example,commit_seq) VALUES(?,?,?,?,?,?,?,?,?) "
-                    "ON CONFLICT(case_id,capability,status) DO NOTHING",
-                    (uid("gap"), run["case_id"], name, reason, impact, fallback, remedy, example, seq),
-                )
-                gap = self.db.execute(
-                    "SELECT id FROM capability_gaps WHERE case_id=? AND capability=? AND status=?",
-                    (run["case_id"], name, reason),
-                ).fetchone()[0]
+            if name == "record_gap":
+                data = gaps.missing_input(self.db, run["id"], args)
+            gap = gaps.register(self.db, run, name, args, status, data, GAPS, seq)
             result = {
                 "status": status,
                 "receipt_id": receipt,
@@ -194,4 +190,13 @@ class Bridge:
             )
             if gap:
                 self.db.execute("INSERT INTO gap_attempts VALUES(?,?)", (gap, receipt))
+                if name == "record_gap":
+                    self.db.execute(
+                        "INSERT OR IGNORE INTO gap_attempts VALUES(?,?)", (gap, data["attempt_receipt_id"])
+                    )
+            gaps.reconcile(self.db, run, name, args, result, seq)
+            pending = gaps.outstanding(self.db, run, [{"commit_seq": seq}])
+            result["outstanding_gap_ids"] = sorted(pending)
+            result["outstanding_inputs"] = gaps.describe(self.db, run["case_id"], pending)
+            self.db.execute("UPDATE receipts SET output=? WHERE id=?", (encode(result), receipt))
             return result

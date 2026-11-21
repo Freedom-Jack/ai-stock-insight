@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 from stockinsight import executor
 
-
 SETTINGS = {
     "STOCKINSIGHT_API_BILLING": "approved",
     "STOCKINSIGHT_OPENAI_API_KEY": "private-test-marker",
@@ -21,14 +20,10 @@ CONTEXT = {
     "lease_token": "lease-marker",
 }
 BRIEF = {
-    "status": "partial",
-    "conclusion": "The price interval requires verification.",
-    "claims": [],
-    "changes": [],
+    "status": "blocked",
+    "passage_ids": [],
     "calculations": [],
-    "alternative_explanations": [],
     "gaps": ["gap-price"],
-    "next_steps": ["Verify the observation interval."],
 }
 
 
@@ -71,13 +66,9 @@ class ExecutorContract(unittest.TestCase):
                 "submit_brief",
                 {
                     "status": "complete",
-                    "conclusion": "The dated filing supplies a quarterly revenue observation.",
-                    "changes": ["A reported value is available."],
-                    "claims": [{"text": passage["text"], "type": "fact", "evidence_refs": [passage["id"]]}],
+                    "passage_ids": [passage["id"]],
                     "calculations": [],
-                    "alternative_explanations": ["The reported period alone cannot establish a trend."],
                     "gaps": [],
-                    "next_steps": ["Read the next comparable filing."],
                 },
                 n=3,
             )
@@ -144,7 +135,8 @@ class ExecutorContract(unittest.TestCase):
 
         with patch.dict(os.environ, SETTINGS, clear=True), patch.object(executor, "_post", transport):
             result = executor.execute("What moved?", CONTEXT, domain)
-        self.assertEqual(BRIEF, result)
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual(["gap-price"], result["gaps"])
         self.assertEqual(["price_context"], invoked)
         self.assertEqual(result.runtime["actual_model"], "contract-model-1")
         self.assertEqual(result.runtime["requests_attempted"], 2)

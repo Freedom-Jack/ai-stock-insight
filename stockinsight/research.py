@@ -3,26 +3,15 @@
 import hashlib
 import hmac
 import json
-import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from . import universe
+from . import assessment, gaps, universe
+from .assessment import required_checks
 from .db import instant, is_fixture, now, uid, write
 
-METHOD = "sourced_company_review.v1"
-
-
-def required_checks(question):
-    price = re.search(r"\b(buy|buying|sell|selling|price|fell|fall\w*|declin\w*|tanks?)\b", question, re.I)
-    consensus = price or re.search(r"consensus|surprise|expectation", question, re.I)
-    required = []
-    if consensus:
-        required.append("historical_consensus")
-    if price:
-        required.append("price_context")
-    return required
+METHOD = "sourced_company_review.v2"
 
 
 SCHEMA = """
@@ -130,13 +119,25 @@ def ask(db, instrument_id, question, *, cutoff=None, request_key=None):
         return _new_job(db, case_id, 0, key, seq)
 
 
-def continuation(db, case_id):
+def continuation(db, case_id, *, request_key=None, expected_revision=None):
     with write(db) as seq:
         case = db.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
         if not case:
             raise ValueError("Unknown case")
+        if request_key is not None and (type(expected_revision) is not int or expected_revision < 0):
+            raise ValueError("Continuation requires a base revision")
+        key = "continue:" + (request_key or uid("request"))
+        previous = db.execute(
+            "SELECT id,case_id,base_revision FROM jobs WHERE request_key=?", (key,)
+        ).fetchone()
+        if previous:
+            if (previous["case_id"], previous["base_revision"]) != (case_id, expected_revision):
+                raise ValueError("idempotency_conflict")
+            return previous["id"]
+        if expected_revision is not None and case["revision"] != expected_revision:
+            raise ValueError("Case changed. Reload before investigating again.")
         universe.instrument(db, case["instrument_id"])
-        return _new_job(db, case_id, case["revision"], uid("request"), seq)
+        return _new_job(db, case_id, case["revision"], key, seq)
 
 
 @dataclass(frozen=True)
@@ -289,33 +290,37 @@ def validate(db, run, body, receipts):
     if not isinstance(body["claims"], list) or len(body["claims"]) > 32:
         raise ValueError("Invalid claims")
     context = json.loads(run["context"])
-    read_ids, quoted_ids, gaps, calculations = set(), set(), set(), set()
+    read_ids, quoted_ids, calculation_inputs = set(), set(), {}
     for receipt in receipts:
         output = json.loads(receipt["output"])
         read_ids.update(output["evidence_ids"])
         if receipt["tool"] == "get_evidence" and receipt["status"] == "ok":
             quoted_ids.update(output["evidence_ids"])
-        if output["gap_id"]:
-            gaps.add(output["gap_id"])
         if receipt["tool"] == "compare_financials" and receipt["status"] == "ok":
-            calculations.add(receipt["id"])
+            calculation_inputs[receipt["id"]] = output["data"]["input_ids"]
     if not set(context["required_checks"]).issubset({r["tool"] for r in receipts}):
         raise ValueError("Missing required price or expectation coverage receipt")
-    if set(body["gaps"]) != gaps or (gaps and body["status"] == "complete"):
-        raise ValueError("Disclose every encountered coverage gap")
-    if body["status"] in ("blocked", "partial") and not gaps:
+    pending = gaps.outstanding(db, run, receipts)
+    if set(body["gaps"]) != pending or (pending and body["status"] == "complete"):
+        raise ValueError("Disclose the outstanding coverage gaps")
+    if body["status"] in ("blocked", "partial") and not pending:
         raise ValueError("A partial or blocked result requires a recorded gap")
-    if set(body["calculations"]) != calculations or len(body["calculations"]) != len(calculations):
-        raise ValueError("Calculation references must match the service receipts")
     if body["status"] != "blocked" and not body["claims"]:
         raise ValueError("Research requires a cited claim")
-    retained_versions = {}
+    retained_versions, superseded = {}, set()
     for ref in read_ids:
         p = evidence.get(db, context["instrument"]["id"], ref, context["cutoff"], fixture=is_fixture(db))
+        if not evidence.still_supported(db, p, context["cutoff"]):
+            superseded.add(ref)
         if p["document_id"] not in retained_versions:
             if p["retention"] == "full":
                 evidence.document_bytes(db, context["instrument"]["id"], p["document_id"])
             retained_versions[p["document_id"]] = p["version_hash"]
+    usable = {rid for rid, refs in calculation_inputs.items() if not superseded.intersection(refs)}
+    if any(rid in calculation_inputs and rid not in usable for rid in body["calculations"]):
+        raise ValueError("Calculation input superseded. Read the eligible edition and recompute.")
+    if set(body["calculations"]) != usable or len(body["calculations"]) != len(usable):
+        raise ValueError("Calculation references must match the eligible service receipts")
     for claim_item in body["claims"]:
         if not isinstance(claim_item, dict) or set(claim_item) != {"text", "type", "evidence_refs"}:
             raise ValueError("Invalid claim fields")
@@ -327,6 +332,8 @@ def validate(db, run, body, receipts):
         _strings(refs, "citations", required=kind != "hypothesis")
         if not set(refs) <= quoted_ids or len(set(refs)) != len(refs):
             raise ValueError("Citation outside the run read-set or duplicated")
+        if superseded.intersection(refs):
+            raise ValueError("Cited passage superseded. Read the eligible source edition.")
         if kind in ("fact", "issuer_statement"):
             passages = [
                 evidence.get(db, context["instrument"]["id"], ref, context["cutoff"], fixture=is_fixture(db))
@@ -338,6 +345,7 @@ def validate(db, run, body, receipts):
         raise ValueError("Research requires supporting evidence")
     return {
         "schema_version": "1.0",
+        "assertions": assessment.validate_assessment(db, run, body, receipts),
         "context": context,
         "passages": sorted(read_ids),
         "versions": retained_versions,

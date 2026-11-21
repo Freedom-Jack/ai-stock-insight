@@ -64,9 +64,12 @@ def _apply(conn, script):
 
 
 def migrations():
-    from . import evidence, research, universe
+    from . import evidence, gaps, research, universe
 
-    return [FOUNDATION + universe.SCHEMA + evidence.SCHEMA + research.SCHEMA]
+    return [
+        FOUNDATION + universe.SCHEMA + evidence.SCHEMA + research.SCHEMA,
+        universe.IDENTITY_MIGRATION + gaps.MIGRATION,
+    ]
 
 
 def connect(path, *, fixture=None):

@@ -37,6 +37,8 @@ def case_detail(db, case_id):
         (case_id,),
     ):
         manifest = json.loads(row["manifest"])
+        body = json.loads(row["body"])
+        accepted_calculations = set(body["calculations"])
         passages = {
             ref: evidence.get(db, item["id"], ref, case["cutoff"], fixture=is_fixture(db))
             for ref in manifest["passages"]
@@ -47,15 +49,11 @@ def case_detail(db, case_id):
         briefs.append(
             {
                 **dict(row),
-                "body": json.loads(row["body"]),
+                "body": body,
                 "manifest": manifest,
                 "sources": passages,
                 "receipts": receipts,
-                "comparisons": [
-                    r["output"]["data"]
-                    for r in receipts
-                    if r["tool"] == "compare_financials" and r["status"] == "ok"
-                ],
+                "comparisons": [r["output"]["data"] for r in receipts if r["id"] in accepted_calculations],
             }
         )
     return {

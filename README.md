@@ -10,7 +10,7 @@ uv run --locked -m stockinsight demo
 uv run --locked -m stockinsight --fixture serve
 ```
 
-Open **http://127.0.0.1:8765** and enter the sign-in code printed by the foreground process. Open the NVIDIA case under **Research**. Expand a citation to read the saved passage and source hash, then inspect the calculation, gaps and receipts. **Mark this revision reviewed** records an explicit review. To try another investigation, select the resolved NVDA listing and ask “Did the reported revenue growth establish stronger full-year demand?” The offline driver covers this dated example. **Ctrl+C** stops the desk. Running `demo` again reopens the same result. With the environment already installed, Windows can run `.\.venv\Scripts\python.exe -m stockinsight` in place of `uv run --locked -m stockinsight`.
+Open **http://127.0.0.1:8765** and use the browser’s sign-in dialog. Enter username `research` and the password printed by the foreground process. Open the NVIDIA case under **Research**. Expand a citation to read the saved passage and source hash, then inspect the calculation, gaps and receipts. **Mark this revision reviewed** records an explicit review. To try another investigation, select the resolved NVDA listing and ask “Did the reported revenue growth establish stronger full-year demand?” The offline driver covers this dated example. **Ctrl+C** stops the desk. Running `demo` again reopens the same result. With the environment already installed, Windows can run `.\.venv\Scripts\python.exe -m stockinsight` in place of `uv run --locked -m stockinsight`.
 
 ### Reproduce the public-data check
 
@@ -24,7 +24,11 @@ uv run --locked -m stockinsight --data-dir .stockinsight/public-example passages
 uv run --locked -m stockinsight --data-dir .stockinsight/public-example serve --port 8766
 ```
 
-Open **http://127.0.0.1:8766** using that terminal’s code. Choose **Companies & themes → NVDA** for the two retained GAAP revenue cells. The source is NVIDIA’s August 2024 release. The CLI comparison gives **30,040 versus 26,044 USD million (+15.3433%)**. The separate synthetic fixture gives **120 versus 100 (+20%)**. Neither route provides a current price or historical Street consensus. [Issuer release](https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2025)
+Open **http://127.0.0.1:8766** with username `research` and the password from that terminal. Choose **Companies & themes → NVDA** for the two retained GAAP revenue cells. The source is NVIDIA’s August 2024 release. The CLI comparison gives **30,040 versus 26,044 USD million (+15.3433%)**. The separate synthetic fixture gives **120 versus 100 (+20%)**. Neither route provides a current price or historical Street consensus. [Issuer release](https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2025)
+
+### Browser authentication
+
+Each foreground process generates a new password and binds to IPv4 loopback. HTTP authentication uses the origin (scheme, host and port) and realm to define its protection space. The desk issues no session cookies. Enter the password in the browser dialog at the printed address. Keep it out of URLs. Stopping the desk retires its password. POSTs also require the exact browser Origin and a CSRF token. This boundary assumes a trusted local operating system and browser. [HTTP protection spaces](https://www.rfc-editor.org/rfc/rfc9110#section-11.5)
 
 ### Use a private list
 
@@ -32,7 +36,7 @@ Start `uv run --locked -m stockinsight serve`. Under **Companies & themes**, pas
 
 `doctor` reports runtime configuration, source checks, and quota limits. The free review uses the synthetic driver and the public capture command. In the ordinary workspace a question is saved even when model execution is blocked. Paid runtime execution requires separate authorization. The [implementation record](docs/implementation-status.md) lists verified routes, fixture limitations, and the I3–I6 continuation.
 
-To verify this checkout, run `uv run --locked -m unittest discover -s tests -v`. For the optional Fiscal SDK contract test, use `uv run --locked --extra fiscal -m unittest discover -s tests -v`. Both commands use fixtures for external accounts. Update the worktree through your usual Git workflow, stop the foreground desk first, then run `uv sync --locked` before restarting. Before updating a private workspace, stop its writers and copy the entire data directory, including retained source files.
+To verify this checkout, run `uv run --locked -m unittest discover -s tests -v`. For the optional Fiscal SDK contract test, use `uv run --locked --extra fiscal -m unittest discover -s tests -v`. To include the browser isolation regression on Windows, run `uv run --locked --extra fiscal --group browser-test -m unittest discover -s tests -v` with Edge installed. On Linux, install a Playwright-compatible Chromium before running that group. The tests use fixtures for external accounts. Update the worktree through your usual Git workflow, stop the foreground desk first, then run `uv sync --locked` before restarting. Before updating a private workspace, stop its writers and copy the entire data directory, including retained source files.
 
 ## Stockwatch
 

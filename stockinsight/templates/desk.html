@@ -23,18 +23,17 @@
 {% macro listing(item) %}{{ item.ticker or item.raw_label }}{% if item.listing_exchange %} · {{ item.listing_exchange }}{% endif %}{% endmacro %}
 {% macro sources(p) %}
   <blockquote>{{ p.text }}</blockquote>
+  {% if p.financial %}{% set f=p.financial %}<p>{{ f.company }} · {{ f.metric }} · {{ f.value }} {{ f.unit }} · {{ f.basis }}<br>
+    {{ f.period_label }} ({{ f.period_start }} to {{ f.period_end }}) · {{ f.currency }} · {{ f.share_basis }}</p>{% endif %}
   <small>{{ p.title }} · {{ p.locator }} · Published {{ p.published_at or 'unknown' }} · Captured {{ p.received_at }}</small>
   {% if p.source_url and p.source_url.startswith('https://') %}<a href="{{ p.source_url }}" rel="noreferrer">Original source</a>{% endif %}
   <details><summary>Source version</summary><code>{{ p.version_hash }}</code><p>{{ p.origin }} · {{ p.id }}</p>
     {% if p.retention=='full' %}<a href="/sources/{{ p.instrument_id }}/{{ p.document_id }}">Download retained version</a>{% endif %}</details>
 {% endmacro %}
-<header><strong>Stock Insight</strong>{% if view!='login' %}<nav aria-label="Research desk"><a href="/">Research</a><a href="/universe">Companies &amp; themes</a><a href="/status">Status</a></nav>{% endif %}</header>
+<header><strong>Stock Insight</strong><nav aria-label="Research desk"><a href="/">Research</a><a href="/universe">Companies &amp; themes</a><a href="/status">Status</a></nav></header>
 <main>
 {% if fixture %}<span class="flag">Fixture workspace · synthetic evidence</span>{% endif %}
-{% if view=='login' %}
-  <h1>Open your research desk</h1>
-  <form method="post" action="/login"><label>Terminal sign-in code <input type="password" name="code" required autofocus autocomplete="off"></label><button>Sign in</button></form>
-{% elif view=='research' %}
+{% if view=='research' %}
   <h1>Research desk</h1>
   {% if universe.instruments %}
     <form class="box" method="post" action="/actions/ask">{{ token() }}<input type="hidden" name="key" value="{{ request_key }}">
@@ -75,16 +74,17 @@
       {% if brief.reviewed_at %}<small>Marked reviewed {{ brief.reviewed_at }}</small>{% else %}<form method="post" action="/actions/review">{{ token() }}<input type="hidden" name="brief" value="{{ brief.id }}"><button>Mark this revision reviewed</button></form>{% endif %}
     </article>
   {% else %}<p>No interpretation has been accepted for this case. <a href="/status">Check the investigator and sources</a>.</p>
-  {% for g in case.gaps %}<p><strong>{{ g.capability | replace('_',' ') }}</strong> · {{ g.impact }} {{ g.remedy }}</p>{% endfor %}
+  {% for g in case.gaps if g.lifecycle == 'open' %}<p><strong>{{ g.capability | replace('_',' ') }}</strong> · {{ g.impact }} {{ g.remedy }}</p>{% endfor %}
   {% endfor %}
   <section><h2>Investigation history</h2>{% for j in case.jobs %}<p>{{ j.created_at }} · <strong>{{ j.state }}</strong> {{ j.detail }}</p>
     {% if j.state in ('ready','leased') %}<form method="post" action="/actions/run">{{ token() }}<input type="hidden" name="job" value="{{ j.id }}"><button>Run or recover job</button></form>{% endif %}
-  {% endfor %}<form method="post" action="/actions/continue">{{ token() }}<input type="hidden" name="case" value="{{ case.id }}"><button>Investigate again</button></form></section>
+  {% endfor %}<form method="post" action="/actions/continue">{{ token() }}<input type="hidden" name="case" value="{{ case.id }}"><input type="hidden" name="key" value="{{ request_key }}"><input type="hidden" name="base_revision" value="{{ case.revision }}"><button>Investigate again</button></form></section>
 {% elif view=='universe' %}
   <h1>Companies &amp; themes</h1>
   {% for s in universe.sources %}<section><h2>{{ s.alias }}</h2><p>{{ s.status }} · External membership · {{ s.mode }}<br>Last accepted observation {{ s.last_success_at or 'pending' }}</p></section>{% endfor %}
-  {% for c in universe.candidates %}<div class="box"><strong>{{ c.state }}</strong> · {{ c.reason }}<p>{{ c.added }} additions, {{ c.removed }} removals</p>
-    {% if c.state=='candidate' and c.membership_complete %}<form method="post" action="/actions/accept">{{ token() }}<input name="snapshot" value="{{ c.id }}" type="hidden"><button>Accept replacement</button></form>{% endif %}</div>{% endfor %}
+  {% for c in universe.candidates %}<div class="box"><strong>{{ c.state }}</strong> · {{ c.source_alias }} ({{ c.source_id }}) · {{ c.reason }}<p>{{ c.added }} additions, {{ c.removed }} removals</p>
+    <ul>{% for change in c.affected %}<li>{{ change.action | capitalize }} · {{ change.label }}</li>{% endfor %}</ul>
+    {% if c.confirmable %}<form method="post" action="/actions/accept">{{ token() }}<input name="snapshot" value="{{ c.id }}" type="hidden"><button>Accept replacement</button></form>{% endif %}</div>{% endfor %}
   <div class="panel">{% for i in universe.instruments %}<article><a href="/companies/{{ i.id }}">{{ listing(i) }}</a><br>{{ i.company_name or i.resolution_status }}<br><small>{{ i.source_ids | join(', ') }}</small></article>{% endfor %}</div>
   <h2>Import the selected list</h2>
   <form method="post" action="/actions/import">{{ token() }}

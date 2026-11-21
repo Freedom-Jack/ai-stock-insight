@@ -129,7 +129,9 @@ def operate(db, args):
         display(result)
         return int(result["state"] == "rejected")
     if name == "accept":
-        display(universe.accept_candidate(db, args.snapshot_id))
+        candidate = universe.accept_candidate(db, args.snapshot_id)
+        display(candidate)
+        return int(candidate["state"] == "rejected")
     elif name == "verify-sources":
         result = evidence.verify_documents(db, after=args.after)
         display(result)
@@ -239,7 +241,10 @@ def main(argv=None):
                 access_log=False,
                 server_header=False,
             )
-            print(f"Open {url}\nTerminal sign-in code: {code}\nCtrl+C stops the private desk.", flush=True)
+            print(
+                f"Open {url}\nUsername: research\nTerminal password: {code}\nCtrl+C stops the private desk.",
+                flush=True,
+            )
             if args.open:
                 webbrowser.open(url)
             uvicorn.Server(config).run(sockets=[listener])

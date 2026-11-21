@@ -1,14 +1,16 @@
 """User-declared watchlist snapshots, separate instrument/company identity and local research."""
 
+import hashlib
 import json
-from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
+from pathlib import Path
 from unittest.mock import patch
 
-from stockinsight import db, universe as u
-
+from stockinsight import db, research
+from stockinsight import universe as u
 
 FULL = b"ticker,listing_exchange,security_type,currency\nNVDA,NASDAQ,STK,USD\nMSFT,NASDAQ,STK,USD\n"
 
@@ -19,7 +21,7 @@ class UniverseTests(unittest.TestCase):
         self.addCleanup(self.conn.close)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys=ON")
-        self.conn.executescript(db.FOUNDATION + u.SCHEMA)
+        self.conn.executescript(db.FOUNDATION + u.SCHEMA + u.IDENTITY_MIGRATION)
 
     def observe(self, raw, **kwargs):
         return u.import_snapshot(self.conn, raw, complete=kwargs.pop("complete", True), **kwargs)
@@ -85,10 +87,22 @@ class UniverseTests(unittest.TestCase):
         self.observe(b"conid\n000000012345")
         only = self.members()[0]
         self.assertEqual((only["id"], only["ticker"], only["conid"]), (before["id"], "ACME", "000000012345"))
-        self.observe(b"ticker,conid\nACM.A,000000012345", mode="file")
+        corrected = self.observe(b"ticker,conid\nACM.A,000000012345", mode="file")
+        self.assertTrue(corrected["confirmable"])
+        self.assertEqual(self.members()[0]["ticker"], "ACME")
+        self.assertEqual(corrected["affected"][0]["action"], "correct")
+        self.assertIn("ACME", corrected["affected"][0]["label"])
+        self.assertIn("ACM.A", corrected["affected"][0]["label"])
+        u.accept_candidate(self.conn, corrected["id"])
         self.assertEqual(self.members()[0]["id"], before["id"])
+        audit = self.conn.execute("SELECT * FROM instrument_corrections").fetchone()
+        self.assertEqual((audit["snapshot_id"], audit["instrument_id"]), (corrected["id"], before["id"]))
         self.assertEqual(
-            set(r[0] for r in self.conn.execute("SELECT ticker FROM instrument_aliases")), {"ACME", "ACM.A"}
+            (json.loads(audit["before_fields"])["ticker"], json.loads(audit["after_fields"])["ticker"]),
+            ("ACME", "ACM.A"),
+        )
+        self.assertEqual(
+            {r[0] for r in self.conn.execute("SELECT ticker FROM instrument_aliases")}, {"ACME", "ACM.A"}
         )
         source = u.universe(self.conn)["sources"][0]
         self.assertEqual(
@@ -202,6 +216,161 @@ class UniverseTests(unittest.TestCase):
             self.observe(FULL + b"ACME,NYSE,STK,USD\n")
         self.assertEqual("\n".join(self.conn.iterdump()), before)
         self.assertFalse(self.conn.in_transaction)
+
+    def test_fully_qualified_cash_listing_and_account_report_boundaries(self):
+        header = b"ticker,listing_exchange,security_type,currency,conid\n"
+        good = self.observe(header + b"CASH,NASDAQ,STK,USD,0444\nMSFT,NASDAQ,STK,USD,")
+        self.assertEqual(good["state"], "complete")
+        cash = next(i for i in self.members() if i["ticker"] == "CASH")
+        self.assertEqual(
+            (cash["listing_exchange"], cash["resolution_status"]), ("NASDAQ", "identified_listing")
+        )
+        self.assertEqual(self.observe(b"ticker,conid\nCASH,0444", source_id="second")["state"], "complete")
+        for raw in (
+            b"CASH",
+            b"ticker,conid\nCASH,unknown",
+            b"ticker,conid\nCASH,9888",
+            b"ticker,cash,quantity\nCASH,991771,112339",
+        ):
+            rejected = self.observe(raw)
+            self.assertEqual(
+                (rejected["state"], rejected["entries"], rejected["content_hash"]), ("rejected", [], None)
+            )
+        source = next(s for s in u.universe(self.conn)["sources"] if s["id"] == "personal")
+        self.assertEqual(source["active_snapshot_id"], good["id"])
+        self.assertNotIn("991771", "\n".join(self.conn.iterdump()))
+
+    def test_embedded_account_identifiers_do_not_enter_sql_or_diagnostics(self):
+        self.observe(FULL)
+        token = "U654321"
+        with self.assertRaises(ValueError) as problem:
+            self.observe(FULL, source_id=f"sample_{token.lower()}_source")
+        with self.assertRaises(ValueError) as alias:
+            u.rename_source(self.conn, "personal", "Sample " + token + " alias")
+        rejects = [
+            self.observe(("AB" + token + "X").encode()),
+            self.observe(
+                ("ticker,listing_exchange,security_type,currency\nSAFE,AB" + token + "X,STK,USD").encode()
+            ),
+        ]
+        self.assertTrue(
+            all(r["state"] == "rejected" and not r["entries"] and not r["content_hash"] for r in rejects)
+        )
+        for view in (
+            str(problem.exception),
+            str(alias.exception),
+            json.dumps(rejects),
+            json.dumps(u.universe(self.conn)),
+            "\n".join(self.conn.iterdump()),
+        ):
+            self.assertNotIn(token, view.upper())
+        self.assertNotIn(token.encode(), self.conn.serialize().upper())
+
+    def test_changed_binding_across_sources_preserves_previous_issuer_and_case(self):
+        head = b"ticker,listing_exchange,security_type,currency,conid\n"
+        first = b"ALFA,NASDAQ,STK,USD,\nBETA,NYSE,STK,USD,"
+        replacement = b"NVDA,NASDAQ,STK,USD,0111"
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "workspace.sqlite3"
+            with closing(db.connect(path, fixture=True)) as conn:
+                active_a = u.import_snapshot(conn, head + first, source_id="source_a", complete=True)
+                candidate = u.import_snapshot(conn, head + replacement, source_id="source_a", complete=True)
+                self.assertTrue(candidate["confirmable"])
+                self.assertEqual(candidate["source_alias"], "source_a")
+                self.assertEqual(
+                    {(a["action"], a["label"].split(" · ")[0]) for a in candidate["affected"]},
+                    {("add", "NVDA"), ("remove", "ALFA"), ("remove", "BETA")},
+                )
+            with closing(db.connect(path)) as other:
+                active_b = u.import_snapshot(
+                    other, head + b"MSFT,NASDAQ,STK,USD,0111", source_id="source_b", complete=True
+                )
+                saved = next(i for i in u.universe(other)["instruments"] if i["ticker"] == "MSFT")
+                job = research.ask(other, saved["id"], "What revenue was reported?")
+            with closing(db.connect(path)) as conn:
+                self.assertFalse(u.universe(conn)["candidates"][0]["confirmable"])
+                self.assertEqual(u.accept_candidate(conn, candidate["id"])["state"], "rejected")
+                case = conn.execute(
+                    "SELECT c.instrument_id FROM cases c JOIN jobs j ON j.case_id=c.id WHERE j.id=?", (job,)
+                ).fetchone()
+                subject = u.instrument(conn, case["instrument_id"])
+                self.assertEqual(
+                    (subject["ticker"], subject["cik"], subject["source_ids"]),
+                    ("MSFT", "0000789019", ["source_b"]),
+                )
+                self.assertEqual(
+                    {s["id"]: s["active_snapshot_id"] for s in u.universe(conn)["sources"]},
+                    {"source_a": active_a["id"], "source_b": active_b["id"]},
+                )
+                direct = u.import_snapshot(conn, head + replacement, source_id="source_c", complete=True)
+                self.assertEqual(direct["state"], "rejected")
+                positive = u.import_snapshot(
+                    conn, head + b"MSFT,NASDAQ,STK,USD,0111", source_id="source_c", complete=True
+                )
+                self.assertEqual(positive["state"], "complete")
+                self.assertEqual(u.instrument(conn, saved["id"])["source_ids"], ["source_b", "source_c"])
+
+    def test_compatible_new_binding_requires_a_fresh_preview_then_can_be_accepted(self):
+        self.observe(b"FIRST\nSECOND", source_id="alpha")
+        raw = b"ticker,listing_exchange,security_type,currency,conid\nMSFT,NASDAQ,STK,USD,1234"
+        original = self.observe(raw, source_id="alpha")
+        self.observe(raw, source_id="beta")
+        self.assertEqual(u.accept_candidate(self.conn, original["id"])["state"], "rejected")
+        updated = self.observe(raw, source_id="alpha")
+        self.assertNotEqual(original["id"], updated["id"])
+        addition = next(a for a in updated["affected"] if a["action"] == "add")
+        self.assertTrue(addition["instrument_id"])
+        self.assertEqual(u.accept_candidate(self.conn, updated["id"])["state"], "complete")
+        self.assertEqual(u.instrument(self.conn, addition["instrument_id"])["source_ids"], ["alpha", "beta"])
+
+    def test_pending_v1_candidate_requires_fresh_binding_preview_after_migration(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "earlier.sqlite3"
+            # A complete-but-empty v1 observation has no frozen binding set.
+            with (
+                patch.object(db, "migrations", return_value=[db.migrations()[0]]),
+                closing(db.connect(path)) as old,
+                db.write(old) as seq,
+            ):
+                old.execute(
+                    """INSERT INTO watchlist_sources
+                        (id,alias,authority,provider,mode,status,commit_seq)
+                        VALUES('external_list','Selected list','external','ibkr','file','needs_review',?)""",
+                    (seq,),
+                )
+                old.execute(
+                    """INSERT INTO watchlist_snapshots(id,source_id,observed_at,mode,content_hash,
+                        entries,membership_complete,state,reason,added,removed,commit_seq)
+                        VALUES('pending_v1','external_list',?,'file',?,'[]',1,'candidate','Review empty list',0,0,?)""",
+                    (db.now(), hashlib.sha256(b"[]").hexdigest(), seq),
+                )
+                old.execute("UPDATE watchlist_sources SET last_observation_id='pending_v1'")
+            with closing(db.connect(path)) as upgraded:
+                self.assertFalse(u.universe(upgraded)["candidates"][0]["confirmable"])
+                again = u.import_snapshot(
+                    upgraded, b"", complete=True, mode="file", source_id="external_list"
+                )
+                self.assertNotEqual(again["id"], "pending_v1")
+                self.assertTrue(again["confirmable"])
+                with self.assertRaises(ValueError):
+                    u.accept_candidate(upgraded, "pending_v1")
+                self.assertEqual(u.accept_candidate(upgraded, again["id"])["state"], "complete")
+
+    def test_unsupported_cross_source_metadata_and_duplicate_bindings_cannot_replace_stored_identity(self):
+        header = b"ticker,listing_exchange,security_type,currency,conid\n"
+        self.observe(header + b"OLD,NYSE,STK,USD,2222\nNEW,NYSE,STK,USD,3333")
+        same = self.observe(b"conid\n2222", source_id="another")
+        self.assertEqual(same["state"], "complete")
+        for conflict in (
+            header + b"OTHER,NYSE,STK,USD,2222",
+            header + b"OLD,NYSE,STK,USD,9999",
+            b"conid,ticker\n2222,NEW",
+            header + b"SAME,NYSE,STK,USD,1234\nSAME,NYSE,STK,USD,1235",
+        ):
+            self.assertEqual(self.observe(conflict)["state"], "rejected")
+        self.assertEqual(
+            {(i["ticker"], i["conid"]) for i in self.members()}, {("OLD", "2222"), ("NEW", "3333")}
+        )
 
 
 if __name__ == "__main__":
