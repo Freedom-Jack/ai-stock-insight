@@ -1,0 +1,14 @@
+# DEVELOPMENT-session example; not Stock Insight runtime configuration.
+# Do not overwrite an existing Codex configuration wholesale.
+# Prefer the per-session launch command in delivery/MODEL_AND_EFFORT.md.
+# If choosing persistent defaults, merge only these keys into the intended
+# trusted project/personal config and keep runtime worker configuration separate.
+model = "gpt-6.2-astra"
+model_reasoning_effort = "xhigh"
+
+# Initial integrated build and difficult review: Astra with "xhigh".
+# Bounded implementation with lower usage: Astra with "high".
+# Broad independent audits/reviews: Astra with "ultra", if actually offered.
+# Bounded routine implementation: "gpt-6.2-sol" with "medium".
+# Verify the selected model and level are actually offered by the client/account.
+# This example changes no authentication, billing, permissions or tool settings.

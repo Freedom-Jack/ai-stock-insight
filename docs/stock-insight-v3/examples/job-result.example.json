@@ -1,0 +1,66 @@
+{
+  "example_metadata": {
+    "synthetic": true,
+    "note": "Illustrative submission requiring corresponding seeded fixture records. It contains no live stock recommendation. Runtime lease tokens must be redacted from stored/exported research."
+  },
+  "submission": {
+    "schema_version": "1.0",
+    "job_id": "job_earnings_example",
+    "run_id": "run_earnings_example",
+    "lease_token": "<injected-by-service-for-current-run>",
+    "fencing_generation": 2,
+    "expected_case_revision": 3,
+    "status": "partial",
+    "as_of": "2026-11-20T15:05:00Z",
+    "method": {
+      "id": "earnings_review",
+      "version": 1
+    },
+    "conclusion": "Illustrative partial result: the available issuer materials support further business and guidance review, but the pre-release Street comparison remains unavailable. This fixture makes no live buy or sell assessment.",
+    "changes": [
+      "The fixture release was retained and attached to the existing earnings case.",
+      "A missing historical-expectations capability was recorded."
+    ],
+    "claims": [
+      {
+        "type": "hypothesis",
+        "text": "A change in forward guidance may help explain an earnings-related price reaction; this requires evidence and is not established by this fixture.",
+        "evidence_refs": [],
+        "status": "unverified"
+      }
+    ],
+    "calculations": [],
+    "alternative_explanations": [
+      {
+        "text": "Broad-market developments or valuation assumptions could also matter.",
+        "status": "hypothesis_requires_investigation",
+        "evidence_refs": []
+      }
+    ],
+    "coverage": [
+      {
+        "family": "issuer_release",
+        "status": "checked_findings",
+        "receipt_ids": ["receipt_fixture_release"],
+        "evidence_ids": ["evidence_fixture_release"]
+      },
+      {
+        "family": "historical_street_consensus",
+        "status": "partial",
+        "receipt_ids": ["receipt_fixture_access_denied"],
+        "evidence_ids": []
+      }
+    ],
+    "gaps": ["gap_pre_release_street_consensus_example"],
+    "next_steps": [
+      {
+        "question": "Does the later transcript materially qualify the release guidance?",
+        "reason": "Resolve an open interpretation using primary material.",
+        "trigger": "transcript_available",
+        "deadline_at": null,
+        "authority": "permitted_research_followup"
+      }
+    ],
+    "read_set_id": "read_set_earnings_example"
+  }
+}

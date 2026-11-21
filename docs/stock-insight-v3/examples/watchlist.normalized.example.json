@@ -1,0 +1,61 @@
+{
+  "example_metadata": {
+    "synthetic": true,
+    "representation": "portable_sanitized_snapshot",
+    "note": "Illustrative instrument-only manual snapshot of an externally authoritative Client Portal/Mobile watchlist. No broker identity, holdings, account data or actual user watchlist is asserted. Symbols await exact listing resolution."
+  },
+  "schema_version": "1.0",
+  "watchlist_source": {
+    "id": "watchlist_source_personal",
+    "alias": "My IBKR Client Portal/Mobile watchlist",
+    "mode": "manual_snapshot",
+    "provider": "ibkr",
+    "active_snapshot_id": "watchlist_snapshot_example",
+    "last_success_at": "2026-11-20T14:00:00Z",
+    "status": "ready",
+    "authority": "external",
+    "external_list_id": null
+  },
+  "watchlist_snapshot": {
+    "id": "watchlist_snapshot_example",
+    "source_id": "watchlist_source_personal",
+    "observed_at": "2026-11-20T14:00:00Z",
+    "source_updated_at": null,
+    "content_hash": "02a07e0a87cedf1f98d53218ed110b4d2206e75764fbed412651a75bab0fb43c",
+    "provider_version": null,
+    "entries": [
+      {
+        "instrument_id": "instrument_nvda_example",
+        "raw_label": "NVDA",
+        "provider_namespace": "ibkr",
+        "conid": null,
+        "ticker": "NVDA",
+        "routing_exchange": null,
+        "listing_exchange": null,
+        "security_type": "STK",
+        "currency": null,
+        "resolution_status": "provisional"
+      },
+      {
+        "instrument_id": "instrument_msft_example",
+        "raw_label": "MSFT",
+        "provider_namespace": "ibkr",
+        "conid": null,
+        "ticker": "MSFT",
+        "routing_exchange": null,
+        "listing_exchange": null,
+        "security_type": "STK",
+        "currency": null,
+        "resolution_status": "provisional"
+      }
+    ],
+    "membership_complete": true,
+    "state": "complete",
+    "validation_outcomes": [
+      "recognized instrument-only manual fixture",
+      "user-declared complete selected external list snapshot",
+      "listing metadata remains unresolved"
+    ],
+    "review_reason": null
+  }
+}

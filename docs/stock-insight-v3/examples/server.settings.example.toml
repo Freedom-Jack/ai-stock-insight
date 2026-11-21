@@ -1,0 +1,83 @@
+# Proposed application overlay for the planned single-server deployment.
+# It does not deploy a server and is not a Codex configuration.
+# Implement profile loading as a recursive table merge over local settings;
+# supplied arrays replace base arrays. Resolve paths after merging.
+# The resulting config must pass commissioning checks before 24/7 is claimed.
+schema_version = "1.0"
+
+[deployment]
+profile = "server_single_node"
+foreground = false
+supervisor = "systemd"
+
+[app]
+data_dir = "/var/lib/stock-insight"
+report_timezone = "America/Toronto"
+market_timezone = "America/New_York"
+single_instance = true
+
+[server]
+host = "127.0.0.1"
+port = 8765
+require_authentication = true
+validate_host_and_origin = true
+csrf_protection = true
+allow_lan = false
+# Reach this private listener through a deliberately configured authenticated
+# access route. Do not expose it publicly by changing host to 0.0.0.0.
+
+[executor]
+enabled = false
+inherit_development_model_settings = false
+# Select supported server authentication, model, effort and budget explicitly.
+# Consumer subscription availability on the laptop does not prove server access.
+
+[laptop]
+windows_companion_enabled = false
+start_at_login = false
+modify_sleep_settings = false
+enable_wake_timers = false
+
+[notifications]
+durable_inbox = true
+desktop_enabled = false
+external_enabled = false
+# Configure an authorized off-device destination before commissioning.
+
+[health]
+external_heartbeat_enabled = false
+heartbeat_endpoint = ""
+secret_ref = ""
+# An independent observer is required for the continuous-operation profile.
+# Prefer an outbound heartbeat if it avoids exposing a new inbound endpoint.
+
+[backup]
+enabled = true
+interval_hours = 24
+keep_daily = 14
+keep_weekly = 8
+local_destination = "/var/lib/stock-insight/backups"
+off_device_destination = ""
+verify_hash_manifest = true
+backup_before_migration = true
+
+[[watchlists.sources]]
+id = "watchlist_source_personal"
+enabled = false
+alias = "My IBKR Client Portal/Mobile watchlist"
+authority = "external"
+mode = "manual_snapshot"
+provider = "ibkr"
+snapshot_semantics = "complete_selected_list"
+# User submits a sanitized snapshot through the authenticated private UI.
+# No laptop path, brokerage session, automatic refresh or provider ID is assumed.
+# A verified future read adapter may change transport while authority stays external.
+
+[commissioning]
+require_verified_runtime_permissions = true
+require_configured_executor = true
+require_private_user_access = true
+require_independent_health = true
+require_external_notification = true
+require_off_device_restore_check = true
+require_single_scheduler_owner = true

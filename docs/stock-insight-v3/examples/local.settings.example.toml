@@ -1,0 +1,172 @@
+# Proposed Stock Insight configuration, schema 1.0. This is not a Codex config.
+# Implement these settings; do not assume the current repository reads them.
+# Optional integrations/schedules remain disabled until setup verifies access.
+# No credential values belong in this file.
+schema_version = "1.0"
+
+[deployment]
+profile = "local_trial"
+foreground = true
+
+[app]
+installation_id = "replace-with-generated-installation-id"
+data_dir = "~/.local/share/stock-insight"
+# The application expands ~ and resolves paths before use; TOML itself does not.
+report_timezone = "America/Toronto"
+market_timezone = "America/New_York"
+single_instance = true
+
+[server]
+host = "127.0.0.1"
+port = 8765
+require_authentication = true
+validate_host_and_origin = true
+csrf_protection = true
+allow_lan = false
+
+[storage]
+journal_policy = "prefer_patched_wal_else_rollback"
+foreign_keys = true
+busy_timeout_ms = 5000
+snapshot_subdirectory = "documents"
+full_text_search = true
+
+[executor]
+adapter = "codex_cli"
+enabled = false
+authentication_mode = "unconfigured"
+model = "select-from-supported-account-models-during-setup"
+reasoning_effort = "select-from-supported-levels-during-setup"
+# These are runtime settings. Do not inherit the separate development profile.
+inherit_development_model_settings = false
+max_parallel_investigations = 1
+max_run_seconds = 900
+lease_seconds = 120
+heartbeat_seconds = 30
+allow_model_shell = false
+require_permission_preflight = true
+require_domain_tools = true
+allow_paid_fallback = false
+
+[research]
+default_information_policy = "live"
+max_retrieval_calls_per_job = 20
+max_calculation_calls_per_job = 8
+max_followup_depth = 2
+discovery_items_per_digest = 3
+# Source-specific freshness and historical cutoffs are capability/job settings.
+# Do not impose one universal quote/filing freshness threshold.
+
+[scheduler]
+enabled = true
+materialize_days = 14
+reconcile_seconds = 30
+report_lead_seconds = 900
+catchup_policy = "group_by_goal_and_coverage"
+preserve_missed_occurrences = true
+ambiguous_local_time = "earlier_occurrence"
+nonexistent_local_time = "next_valid_instant"
+
+[[goals]]
+id = "weekly_lookahead"
+enabled = false
+kind = "weekly"
+days = ["sunday"]
+local_time = "18:00"
+timezone = "America/Toronto"
+time_semantics = "report_deadline"
+method = "weekly_synthesis"
+
+[[goals]]
+id = "pre_market"
+enabled = false
+kind = "market_session"
+market_calendar_ref = "us_equities_verified_at_setup"
+local_time = "08:30"
+timezone = "America/Toronto"
+time_semantics = "report_deadline"
+method = "daily_update"
+
+[[goals]]
+id = "closing_review"
+enabled = false
+kind = "market_session_relative"
+market_calendar_ref = "us_equities_verified_at_setup"
+offset_after_close_minutes = 30
+timezone = "America/Toronto"
+time_semantics = "report_deadline"
+method = "daily_update"
+
+[providers.fiscal_ai]
+enabled = false
+transport = "streamable_http"
+mcp_url = "https://api.fiscal.ai/mcp"
+authentication_mode = "unconfigured"
+secret_ref = ""
+read_operations_only = true
+discover_actual_tools = true
+daily_call_budget = 200
+# Verify exact dataset/company/history access. This is below the documented
+# free 250 calls/day but is not evidence that this account has that plan.
+# Personal API access must not be assumed to include Street Consensus.
+
+[providers.sec]
+enabled = false
+identified_user_agent = "configure-application-name-and-contact-at-setup"
+max_requests_per_second = 2
+cache_enabled = true
+
+[watchlists]
+max_file_size_bytes = 1048576
+max_rows = 5000
+stable_file_seconds = 2
+review_unexpected_empty = true
+large_removal_fraction = 0.5
+persist_raw_imports = false
+broker_api_enabled = false
+
+[[watchlists.sources]]
+id = "watchlist_source_personal"
+enabled = false
+alias = "My IBKR Client Portal/Mobile watchlist"
+authority = "external"
+mode = "manual_snapshot"
+provider = "ibkr"
+snapshot_semantics = "complete_selected_list"
+# external_list_id is absent/unknown until obtained from the actual provider.
+# A manually supplied snapshot does not transfer membership authority.
+# For mode=file, configure only the selected instrument-only file_path privately.
+
+[notifications]
+durable_inbox = true
+desktop_enabled = false
+external_enabled = false
+deduplicate_by_brief_and_purpose = true
+
+[laptop]
+windows_companion_enabled = false
+start_at_login = false
+health_check_seconds = 60
+consecutive_failures_before_notice = 3
+max_restarts_per_ten_minutes = 3
+modify_sleep_settings = false
+enable_wake_timers = false
+
+[backup]
+enabled = true
+interval_hours = 24
+keep_daily = 14
+keep_weekly = 8
+local_destination = "~/.local/share/stock-insight/backups"
+off_device_destination = ""
+verify_hash_manifest = true
+backup_before_migration = true
+# This default is local-only protection until an off-device destination exists.
+
+[policy]
+portfolio_data_enabled = false
+broker_account_data_enabled = false
+trading_enabled = false
+runtime_tool_installation_enabled = false
+runtime_code_modification_enabled = false
+external_publication_enabled = false
