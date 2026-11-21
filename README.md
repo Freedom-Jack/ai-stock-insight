@@ -1,4 +1,40 @@
-# Stockwatch
+# Stock Insight and Stockwatch
+
+## Try the private Stock Insight research desk
+
+From this checkout, install the locked dependencies and run the offline investigation. These commands use the Python 3.14 runtime tested on Windows.
+
+```powershell
+uv sync --locked --python 3.14
+uv run --locked -m stockinsight demo
+uv run --locked -m stockinsight --fixture serve
+```
+
+Open **http://127.0.0.1:8765** and enter the sign-in code printed by the foreground process. Open the NVIDIA case under **Research**. Expand a citation to read the saved passage and source hash, then inspect the calculation, gaps and receipts. **Mark this revision reviewed** records an explicit review. To try another investigation, select the resolved NVDA listing and ask “Did the reported revenue growth establish stronger full-year demand?” The offline driver covers this dated example. **Ctrl+C** stops the desk. Running `demo` again reopens the same result. With the environment already installed, Windows can run `.\.venv\Scripts\python.exe -m stockinsight` in place of `uv run --locked -m stockinsight`.
+
+### Reproduce the public-data check
+
+Run these commands in a second terminal. They use the ordinary local workspace. The CSV is a sample instrument list. NVIDIA’s public issuer route needs internet access. Each successful check is cached for one hour.
+
+```powershell
+uv run --locked -m stockinsight --data-dir .stockinsight/public-example import-list examples/stockinsight/watchlist.csv --source example --complete
+uv run --locked -m stockinsight --data-dir .stockinsight/public-example capture NVDA --provider issuer
+uv run --locked -m stockinsight --data-dir .stockinsight/public-example compare NVDA "Q2 FY25" "Q1 FY25"
+uv run --locked -m stockinsight --data-dir .stockinsight/public-example passages NVDA
+uv run --locked -m stockinsight --data-dir .stockinsight/public-example serve --port 8766
+```
+
+Open **http://127.0.0.1:8766** using that terminal’s code. Choose **Companies & themes → NVDA** for the two retained GAAP revenue cells. The source is NVIDIA’s August 2024 release. The CLI comparison gives **30,040 versus 26,044 USD million (+15.3433%)**. The separate synthetic fixture gives **120 versus 100 (+20%)**. Neither route provides a current price or historical Street consensus. [Issuer release](https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2025)
+
+### Use a private list
+
+Start `uv run --locked -m stockinsight serve`. Under **Companies & themes**, paste one ticker per line or the instrument-only CSV form shown there. Check the full-list box only for a complete replacement. Symbol-only entries stay provisional. The application also accepts a selected file with `import-list PATH --complete`. Source membership stays external. Inspect destructive replacement candidates before accepting them. Keep the private workspace on a user-owned local disk. Use the global `--data-dir DIRECTORY` option before a command to change its location.
+
+`doctor` reports runtime configuration, source checks, and quota limits. The free review uses the synthetic driver and the public capture command. In the ordinary workspace a question is saved even when model execution is blocked. Paid runtime execution requires separate authorization. The [implementation record](docs/implementation-status.md) lists verified routes, fixture limitations, and the I3–I6 continuation.
+
+To verify this checkout, run `uv run --locked -m unittest discover -s tests -v`. For the optional Fiscal SDK contract test, use `uv run --locked --extra fiscal -m unittest discover -s tests -v`. Both commands use fixtures for external accounts. Update the worktree through your usual Git workflow, stop the foreground desk first, then run `uv sync --locked` before restarting. Before updating a private workspace, stop its writers and copy the entire data directory, including retained source files.
+
+## Stockwatch
 
 Stockwatch is a local earthquake and issuer-disclosure monitor for companies with a documented TSMC exposure. It opens a watch when USGS reports a qualifying earthquake, then checks Taiwan Stock Exchange disclosures for TSMC statements about the event. The included watchlist covers AMD and NVIDIA.
 
