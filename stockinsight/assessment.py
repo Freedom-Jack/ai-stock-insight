@@ -414,6 +414,10 @@ def _ids(value):
 
 def render(context, selection, calls):
     """Derive canonical human-readable fields, plus machine-readable support."""
+    from . import announcement_research
+
+    if context.get("method") == announcement_research.METHOD:
+        return announcement_research.render(context, selection, calls)
     intent = objective(context["question"])
     latest, saved = _latest_saved(context["question"])
     latest = latest or bool(intent.latest_requirements)

@@ -320,6 +320,83 @@ class ProviderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             evidence._issuer_rows(source.replace(b"millions", b"billions"), db.now())
 
+    def test_nvidia_routes_share_retry_and_spacing_while_sec_and_caches_remain_independent(self):
+        os.environ["STOCKINSIGHT_SEC_CONTACT"] = "contract@example.org"
+        deadline = "2026-11-21T13:00:00.000000Z"
+        cooldown = providers.SourceError("rate_limited", "HTTP 429", deadline)
+        wire = []
+
+        def read(host, path, **kwargs):
+            wire.append((host, path))
+            if host == providers.SEC_HOST:
+                return json.dumps(sec_packet()).encode()
+            if path == providers.ISSUER_PATH:
+                return (
+                    b"NVIDIA Announces Financial Results for Second Quarter Fiscal 2025<table>"
+                    b"<tr><td>GAAP</td></tr><tr><td>($ in millions, except earnings per share)</td>"
+                    b"<td>Q2 FY25</td><td>Q1 FY25</td><td>Q2 FY24</td><td>Q/Q</td><td>Y/Y</td></tr>"
+                    b"<tr><td>Revenue</td><td>$30,040</td><td>$26,044</td><td>$13,507</td><td>Up</td><td>Up</td></tr></table>"
+                )
+            raise cooldown
+
+        def capture(provider, when):
+            with patch.object(evidence, "now", return_value=when):
+                return evidence.capture_public(self.conn, self.identity, provider)
+
+        with patch.object(providers, "_fetch", read):
+            rejected = capture("issuer_news", "2026-11-21T12:00:00Z")
+            self.assertEqual(rejected["retry_at"], deadline)
+            sec = capture("sec", "2026-11-21T12:00:00Z")
+            self.assertEqual(sec["status"], "ok")
+            denied = capture("issuer", "2026-11-21T12:59:59Z")
+            self.assertEqual(denied["status"], "rate_limited")
+            self.assertEqual(denied["retry_at"], deadline)
+            self.assertEqual(len(wire), 2)
+            allowed = capture("issuer", deadline)
+            self.assertEqual(allowed["status"], "ok")
+            self.assertFalse(allowed["cached"])
+            self.assertNotEqual(allowed["receipt_id"], sec["receipt_id"])
+            self.assertEqual(capture("issuer_news", "2026-11-21T13:00:00.900000Z")["status"], "rate_limited")
+            self.assertEqual(len(wire), 3)
+            # Another genuine RSS check can start once the host spacing has elapsed.
+            cooldown = providers.SourceError("rate_limited", "HTTP 429", "2026-11-21T14:00:00.000000Z")
+            repeated = capture("issuer_news", "2026-11-21T13:00:01Z")
+            self.assertEqual(repeated["retry_at"], cooldown.retry_at)
+            self.assertNotEqual(repeated["receipt_id"], rejected["receipt_id"])
+            cached = capture("issuer", "2026-11-21T13:00:02Z")
+            self.assertTrue(cached["cached"])
+            self.assertEqual(cached["receipt_id"], allowed["receipt_id"])
+            self.assertEqual(len(wire), 4)
+            attempts = self.conn.execute("SELECT provider,status FROM source_checks ORDER BY commit_seq")
+            self.assertEqual(
+                list(map(tuple, attempts)),
+                [
+                    ("issuer_news", "rate_limited"),
+                    ("sec", "ok"),
+                    ("issuer", "ok"),
+                    ("issuer_news", "rate_limited"),
+                ],
+            )
+
+    def test_second_nvidia_route_waits_while_first_is_still_receiving(self):
+        def blocked(host, path, **kwargs):
+            self.assertNotEqual(
+                path, providers.ISSUER_PATH, "The other route must share the in-flight claim."
+            )
+            with patch.object(evidence, "now", return_value="2026-11-21T12:00:05Z"):
+                self.assertEqual(
+                    evidence.capture_public(self.conn, self.identity, "issuer")["status"], "rate_limited"
+                )
+            raise providers.SourceError("unavailable", "HTTP 503")
+
+        with (
+            patch.object(evidence, "now", return_value="2026-11-21T12:00:00Z"),
+            patch.object(providers, "_fetch", blocked),
+        ):
+            self.assertEqual(
+                evidence.capture_public(self.conn, self.identity, "issuer_news")["status"], "unavailable"
+            )
+
     def test_fiscal_profile_probe_projects_identity_and_records_real_failures(self):
         with patch.object(providers, "_fetch") as fetch:
             self.assertEqual(providers.probe_fiscal(self.conn, self.identity)["status"], "unavailable")

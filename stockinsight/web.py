@@ -3,8 +3,9 @@
 import hmac
 import secrets
 from base64 import b64encode
-from contextlib import closing
+from contextlib import asynccontextmanager, closing
 from pathlib import Path
+from threading import Event, Thread
 from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, Request
@@ -12,7 +13,7 @@ from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from . import evidence, executor, providers, research, universe, workspace
+from . import evidence, journal, local_research, monitor, providers, research, universe, workspace
 from .db import connect, is_fixture, uid
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).with_name("templates"))
@@ -23,8 +24,19 @@ def same(a, b):
     return isinstance(a, str) and hmac.compare_digest(a.encode(), b.encode())
 
 
-def application(path, port, login_code):
-    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+def application(path, port, login_code, *, request_stop=None):
+    @asynccontextmanager
+    async def foreground(app):
+        stop = Event()
+        worker = Thread(target=monitor.run_foreground, args=(path, stop), daemon=True)
+        worker.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            await run_in_threadpool(worker.join, 30)
+
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=foreground)
     host = f"127.0.0.1:{port}"
     origin = f"http://{host}"
     # HTTP authentication is scoped to an origin (including its port).
@@ -95,12 +107,36 @@ def application(path, port, login_code):
         return PlainTextResponse("Browser session verification failed", 403)
 
     def page(req, db, view, **kw):
-        return render(req, view, fixture=is_fixture(db), request_key=uid("request"), **kw)
+        fixture = is_fixture(db)
+        return render(req, view, fixture=fixture, device_ready=not fixture and local_research.model_available(),
+                      request_key=uid("request"), **kw)
 
     @app.get("/")
     def home(req: Request):
         with closing(connect(path)) as db:
             return page(req, db, "research", cases=workspace.cases(db), universe=universe.universe(db))
+
+    @app.get("/today")
+    def today(req: Request):
+        with closing(connect(path)) as db:
+            unread = db.execute(
+                """SELECT b.case_id,b.revision,c.question,i.ticker FROM inbox n JOIN briefs b ON b.id=n.brief_id
+                   JOIN cases c ON c.id=b.case_id JOIN instruments i ON i.id=c.instrument_id
+                   WHERE n.reviewed_at IS NULL ORDER BY b.commit_seq DESC LIMIT 25"""
+            ).fetchall()
+            return page(req, db, "today", unread=unread, journal=journal.dashboard(db),
+                        monitor=monitor.dashboard(db), universe=universe.universe(db))
+
+    @app.get("/monitor")
+    def monitoring(req: Request):
+        with closing(connect(path)) as db:
+            return page(req, db, "monitor", monitor=monitor.dashboard(db), universe=universe.universe(db))
+
+    @app.get("/journal")
+    @app.get("/upcoming")
+    def notebook(req: Request):
+        with closing(connect(path)) as db:
+            return page(req, db, req.url.path[1:], journal=journal.dashboard(db))
 
     @app.get("/universe")
     def lists(req: Request):
@@ -123,7 +159,8 @@ def application(path, port, login_code):
     @app.get("/cases/{case_id}")
     def detail(req: Request, case_id: str):
         with closing(connect(path)) as db:
-            return page(req, db, "case", case=workspace.case_detail(db, case_id))
+            return page(req, db, "case", case=workspace.case_detail(db, case_id),
+                        case_notes=journal.case_notes(db, case_id))
 
     @app.get("/sources/{instrument_id}/{document_id}")
     def source(instrument_id: str, document_id: str):
@@ -142,13 +179,17 @@ def application(path, port, login_code):
                 req,
                 db,
                 "status",
-                runtime=executor.preflight(),
+                can_stop=request_stop is not None,
                 providers=providers.capabilities(db),
                 states=db.execute("SELECT state,count(*) AS n FROM jobs GROUP BY state").fetchall(),
             )
 
     def mutate(action, data):
         with closing(connect(path)) as db:
+            if action.startswith("monitor-"):
+                return monitor.action(db, action, data)
+            if action.startswith("journal-"):
+                return journal.action(db, action, data)
             if action == "import":
                 universe.import_snapshot(
                     db, data.get("entries", "").encode(), complete=data.get("complete") == "yes"
@@ -182,6 +223,9 @@ def application(path, port, login_code):
                     + "?capture="
                     + ("ok" if result["status"] == "ok" else "unavailable")
                 )
+            engine = data.get("engine") or ("device" if not is_fixture(db) and local_research.model_available() else "local")
+            if engine not in ("local", "device"):
+                raise ValueError("Choose a local research method")
             if action == "ask":
                 key = data.get("key", "")
                 if not key.startswith("request_") or len(key) != 32:
@@ -211,7 +255,7 @@ def application(path, port, login_code):
             if not row:
                 raise ValueError("Unknown job")
             try:
-                research.run_job(db, job_id)
+                research.run_job(db, job_id, engine=engine)
             except ValueError:
                 # The durable case shows the execution outcome, including blocked and queued work.
                 pass
@@ -220,6 +264,9 @@ def application(path, port, login_code):
     @app.post("/actions/{action}")
     async def action(req: Request, action: str):
         data = await fields(req)
+        if action == "stop" and request_stop and data.get("confirm") == "yes":
+            request_stop()
+            return PlainTextResponse("Stock Insight is stopping. Run the Windows launcher to reopen your workspace.")
         destination = await run_in_threadpool(mutate, action, data)
         return RedirectResponse(destination, 303)
 

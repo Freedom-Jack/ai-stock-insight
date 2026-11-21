@@ -159,6 +159,8 @@ def _deadline(seconds):
 
 def claim(db, job_id, execution_secret, request_id):
     """Called by the trusted dispatcher. The worker never chooses its identity."""
+    from . import announcement_research
+
     with write(db) as seq:
         job = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         if not job or job["state"] not in ("ready", "leased"):
@@ -177,6 +179,9 @@ def claim(db, job_id, execution_secret, request_id):
             db.execute("UPDATE runs SET state='expired',commit_seq=? WHERE id=?", (seq, old["id"]))
         case = db.execute("SELECT * FROM cases WHERE id=?", (job["case_id"],)).fetchone()
         item = universe.instrument(db, case["instrument_id"])
+        method = METHOD
+        if not is_fixture(db) and announcement_research.accepts(case["question"], item):
+            method = announcement_research.METHOD
         context = {
             "instrument": {
                 k: item.get(k)
@@ -192,7 +197,7 @@ def claim(db, job_id, execution_secret, request_id):
                 )
             },
             "cutoff": case["cutoff"],
-            "method": METHOD,
+            "method": method,
             "base_revision": job["base_revision"],
             "at_seq": seq,
             "case_id": case["id"],
@@ -351,7 +356,7 @@ def validate(db, run, body, receipts):
         "passages": sorted(read_ids),
         "versions": retained_versions,
         "receipts": [r["id"] for r in receipts],
-        "method": METHOD,
+        "method": context["method"],
     }
 
 
@@ -394,7 +399,7 @@ def submit(db, lease, body, runtime):
                     run["case_id"],
                     revision + 1,
                     run["id"],
-                    METHOD,
+                    manifest["method"],
                     stamp,
                     encode(body),
                     signature,
@@ -420,7 +425,7 @@ def submit(db, lease, body, runtime):
     raise ValueError("revision_conflict")
 
 
-def run_job(db, job_id):
+def run_job(db, job_id, *, engine="responses"):
     from . import executor
     from .bridge import Bridge
 
@@ -434,9 +439,17 @@ def run_job(db, job_id):
         "billing_mode": "offline" if fixture else "unconfigured",
     }
     try:
-        if not fixture:
-            runtime = executor.preflight()
-        result = executor.execute(context["question"], context, bridge.call, fixture=fixture)
+        if not fixture and engine in ("local", "device"):
+            from . import local_research
+
+            runtime = {"adapter": engine, "billing_mode": "local_no_provider_charges"}
+            result = local_research.execute(context, bridge.call, on_device=engine == "device", runtime=runtime)
+        elif fixture or engine == "responses":
+            if not fixture:
+                runtime = executor.preflight()
+            result = executor.execute(context["question"], context, bridge.call, fixture=fixture)
+        else:
+            raise ValueError("Unknown investigator")
         runtime = getattr(result, "runtime", runtime)
         return submit(db, lease, result, runtime)
     except (ValueError, TimeoutError, OSError) as exc:

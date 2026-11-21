@@ -1,6 +1,18 @@
 # Stock Insight and Stockwatch
 
-## Try the private Stock Insight research desk
+## Start the Windows personal trial
+
+Double-click **Start-StockInsight.cmd** or run the following from this checkout.
+
+```powershell
+.\Start-StockInsight.cmd
+```
+
+Open **http://127.0.0.1:8765/today**. Sign in as `research` with the password printed in the terminal. The launcher opens your personal workspace at `%LOCALAPPDATA%\StockInsight\personal`. Use **Companies & themes** to enter an instrument list, then **Research** to ask a question. The installed on-device model selects a research procedure. The application acquires permitted public sources, checks the evidence and saves the brief.
+
+Use **Ctrl+C** in the terminal or **Status → Stop this desk** to stop. The same command reopens your saved research and schedules. For the isolated synthetic demo run `.\Start-StockInsight.cmd --demo` (port 8766). [First use, access, updates, backup and restore](docs/windows-trial.md)
+
+## Run the standalone fixture exercise
 
 From this checkout, install the locked dependencies and run the offline investigation. These commands use the Python 3.14 runtime tested on Windows.
 
@@ -34,7 +46,7 @@ Each foreground process generates a new password and binds to IPv4 loopback. HTT
 
 Start `uv run --locked -m stockinsight serve`. Under **Companies & themes**, paste one ticker per line or the instrument-only CSV form shown there. Check the full-list box only for a complete replacement. Symbol-only entries stay provisional. The application also accepts a selected file with `import-list PATH --complete`. Source membership stays external. Inspect destructive replacement candidates before accepting them. Keep the private workspace on a user-owned local disk. Use the global `--data-dir DIRECTORY` option before a command to change its location.
 
-`doctor` reports runtime configuration, source checks, and quota limits. The free review uses the synthetic driver and the public capture command. In the ordinary workspace a question is saved even when model execution is blocked. Paid runtime execution requires separate authorization. The [implementation record](docs/implementation-status.md) lists verified routes, fixture limitations, and the I3–I6 continuation.
+`doctor` reports runtime configuration and source access. The Windows trial uses local inference and public-source tools. An ordinary workspace saves the question and execution details even when evidence or model access is unavailable. The separate hosted Responses adapter requires explicit CLI selection and its own billing authorization. [Implementation record](docs/implementation-status.md)
 
 To verify this checkout, run `uv run --locked -m unittest discover -s tests -v`. For the optional Fiscal SDK contract test, use `uv run --locked --extra fiscal -m unittest discover -s tests -v`. To include the browser isolation regression on Windows, run `uv run --locked --extra fiscal --group browser-test -m unittest discover -s tests -v` with Edge installed. On Linux, install a Playwright-compatible Chromium before running that group. The tests use fixtures for external accounts. Update the worktree through your usual Git workflow, stop the foreground desk first, then run `uv sync --locked` before restarting. Before updating a private workspace, stop its writers and copy the entire data directory, including retained source files.
 

@@ -1,0 +1,104 @@
+{% macro scope_input(case, journal) %}
+  {% if case %}
+    <input type="hidden" name="scope" value="case:{{ case.id }}">
+    {% if case.briefs %}<label>Research revision
+      <select name="brief">{% for brief in case.briefs %}<option value="{{ brief.id }}">Revision {{ brief.revision }} · {{ brief.as_of }}</option>{% endfor %}<option value="">Case as a whole</option></select>
+    </label>{% endif %}
+  {% else %}
+    <label>Research subject
+      <select name="scope" required>
+        {% if journal.cases %}<optgroup label="Cases">{% for c in journal.cases %}
+          <option value="case:{{ c.id }}">{{ c.ticker or 'Listing' }} · {{ c.question }}</option>
+        {% endfor %}</optgroup>{% endif %}
+        {% if journal.instruments %}<optgroup label="Watchlist">{% for i in journal.instruments %}
+          <option value="listing:{{ i.id }}">{{ listing(i) }}</option>
+        {% endfor %}</optgroup>{% endif %}
+      </select>
+    </label>
+  {% endif %}
+{% endmacro %}
+
+{% macro conditions() %}
+<details><summary>Set a review condition</summary>
+  <label>What would prompt another look? <input name="condition" maxlength="1000"></label>
+  <label>Review date (UTC) <input name="review_on" type="date"></label>
+  <label><input type="checkbox" name="next_source" value="yes"> Flag this when a new source is saved for this listing</label>
+</details>
+{% endmacro %}
+
+{% macro note_form(case, journal) %}
+<form method="post" action="/actions/journal-note">{{ token() }}
+  <input type="hidden" name="key" value="{{ request_key }}">
+  {{ scope_input(case,journal) }}
+  <label>Entry type <select name="kind">
+    <option value="judgment">Research judgment</option><option value="intention">Stated intention</option>
+    <option value="reported_action">Reported action</option><option value="review">Review note</option>
+  </select></label>
+  <label>Your note and rationale <textarea name="body" rows="3" required maxlength="3000"></textarea></label>
+  {{ conditions() }}
+  <button>Save note</button>
+</form>
+{% endmacro %}
+
+{% macro plan_form(case, journal) %}
+<form method="post" action="/actions/journal-plan">{{ token() }}
+  <input type="hidden" name="key" value="{{ request_key }}">
+  {{ scope_input(case,journal) }}
+  <label>Question to investigate <textarea name="body" rows="2" required maxlength="3000"></textarea></label>
+  {{ conditions() }}
+  <button>Save planned question</button>
+</form>
+{% endmacro %}
+
+{% macro journal_entry(n) %}
+<article id="{{ n.id }}">
+  <small>{{ n.label }} · You · <time datetime="{{ n.created_at }}">{{ n.created_at }}</time></small>
+  <p style="white-space:pre-wrap">{{ n.body }}</p>
+  <p><a href="/companies/{{ n.instrument_id }}">{{ listing(n) }}</a>
+    {% if n.case_id %} · <a href="/cases/{{ n.case_id }}">{{ n.source_question }}</a>{% endif %}
+    {% if n.source_revision %} · Revision {{ n.source_revision }}{% endif %}
+  </p>
+  {% if n.review_of_id %}<p>Review of <a href="#{{ n.review_of_id }}">{{ n.reviewed_text | truncate(120) }}</a></p>{% endif %}
+  {% if n.condition_text %}<p>Review condition · {{ n.condition_text }}</p>{% endif %}
+  {% if n.review_on %}<p>{{ 'Review due' if n.date_due else 'Review on' }} · {{ n.review_on }} UTC</p>{% endif %}
+  {% if n.trigger_document_id %}
+    <p>Newly saved source · {{ n.trigger_document_title }} · {{ n.trigger_document_received_at }}
+      {% if n.trigger_document_retention=='full' %} · <a href="/sources/{{ n.instrument_id }}/{{ n.trigger_document_id }}">Download saved version</a>{% endif %}</p>
+  {% elif n.next_source %}<p>Watching for the next saved source for this listing.</p>{% endif %}
+  {% if n.kind == 'question' %}
+    {% if n.followup_case %}
+      <p><a href="/cases/{{ n.followup_case }}">Open follow-up investigation</a>
+        {% if n.accepted_revision %} · Investigated through revision {{ n.accepted_revision }}{% endif %}
+        · Latest job {{ n.job_state }}</p>
+    {% elif n.watched and n.resolution_status != 'unclassified' %}
+      <p>Pending investigation</p>
+      <form method="post" action="/actions/journal-start">{{ token() }}
+        <input type="hidden" name="entry" value="{{ n.id }}"><button>Queue investigation with current evidence</button>
+      </form>
+    {% elif n.watched %}<p>Pending · Classify this asset before starting stock research.</p>
+    {% else %}<p>Pending · The listing is outside the active watchlist.</p>{% endif %}
+  {% else %}
+    {% if n.reviewed_at %}<p>Reviewed · {{ n.reviewed_at }}</p>{% endif %}
+    <details><summary>Add a reflection</summary>
+      <form method="post" action="/actions/journal-reflect">{{ token() }}
+        <input name="key" type="hidden" value="{{ request_key }}-{{ n.id }}">
+        <input name="entry" type="hidden" value="{{ n.id }}">
+        <label>Your review <textarea name="body" rows="2" required maxlength="3000"></textarea></label>
+        <button>Save reflection</button>
+      </form>
+    </details>
+  {% endif %}
+</article>
+{% endmacro %}
+
+{% if view=='case' %}
+<section><h2>Journal and follow-up</h2>
+  {% if case_notes.origin %}
+    <p>Opened from a planned question
+      {% if case_notes.origin.case_id %}in <a href="/cases/{{ case_notes.origin.case_id }}">{{ case_notes.origin.question }}</a>{% else %}in the <a href="/journal#{{ case_notes.origin.id }}">journal</a>{% endif %}.</p>
+  {% endif %}
+  <details><summary>Add a note</summary>{{ note_form(case,none) }}</details>
+  <details><summary>Plan a follow-up question</summary>{{ plan_form(case,none) }}</details>
+  {% for entry in case_notes.entries %}{{ journal_entry(entry) }}{% endfor %}
+</section>
+{% endif %}

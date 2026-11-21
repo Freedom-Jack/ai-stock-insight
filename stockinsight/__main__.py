@@ -10,7 +10,7 @@ import webbrowser
 from contextlib import closing
 from pathlib import Path
 
-from . import evidence, executor, providers, research, universe, workspace
+from . import evidence, executor, local_research, providers, research, universe, workspace
 from .db import connect, is_fixture
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples/stockinsight/watchlist.csv"
@@ -92,7 +92,10 @@ def build_parser():
         ("review", "brief_id"),
         ("fiscal-probe", "listing"),
     ):
-        actions.add_parser(name).add_argument(field)
+        command = actions.add_parser(name)
+        command.add_argument(field)
+        if name in ("continue", "run-job"):
+            command.add_argument("--engine", choices=("local", "device", "responses"))
     file = actions.add_parser("import-list")
     file.add_argument("file", type=Path)
     file.add_argument("--source", default="personal")
@@ -112,6 +115,7 @@ def build_parser():
     ask = actions.add_parser("ask")
     ask.add_argument("listing")
     ask.add_argument("question")
+    ask.add_argument("--engine", choices=("local", "device", "responses"))
     ask.add_argument("--cutoff", help="Historical public-information cutoff with UTC offset")
     ask.add_argument("--queue", action="store_true", help="Save for later execution")
     server = actions.add_parser("serve", aliases=["run"])
@@ -145,9 +149,10 @@ def operate(db, args):
                 "journal_mode": db.execute("PRAGMA journal_mode").fetchone()[0],
                 "schema": db.execute("SELECT max(version) FROM migrations").fetchone()[0],
                 "integrity": db.execute("PRAGMA quick_check").fetchone()[0],
-                "runtime": executor.preflight(),
+                "runtime": {"local_financial_tools": True, "on_device_model": local_research.model_available(),
+                            "hosted_responses": executor.preflight()},
                 "providers": providers.capabilities(db),
-                "continuous_operation": "uncommissioned",
+                "monitoring": "foreground while serve is running",
             }
         )
     elif name == "universe":
@@ -210,7 +215,8 @@ def operate(db, args):
         print("Saved case", row[0], "| Job", job)
         if name == "ask" and args.queue:
             return 0
-        brief = research.run_job(db, job)
+        engine = args.engine or ("device" if not is_fixture(db) and local_research.model_available() else "local")
+        brief = research.run_job(db, job, engine=engine)
         print_case(workspace.case_detail(db, row[0]))
         return int(brief is None)
     return 0
@@ -233,21 +239,25 @@ def main(argv=None):
         with closing(socket.socket()) as listener:
             listener.bind(("127.0.0.1", args.port))
             listener.listen()
+            def request_stop():
+                server.should_exit = True
+
             config = uvicorn.Config(
-                application(path, args.port, code),
+                application(path, args.port, code, request_stop=request_stop),
                 host="127.0.0.1",
                 port=args.port,
                 proxy_headers=False,
                 access_log=False,
                 server_header=False,
             )
+            server = uvicorn.Server(config)
             print(
                 f"Open {url}\nUsername: research\nTerminal password: {code}\nCtrl+C stops the private desk.",
                 flush=True,
             )
             if args.open:
-                webbrowser.open(url)
-            uvicorn.Server(config).run(sockets=[listener])
+                webbrowser.open(url + "/today")
+            server.run(sockets=[listener])
         return 0
     except (OSError, ValueError, sqlite3.Error) as exc:
         print(str(exc), file=sys.stderr)

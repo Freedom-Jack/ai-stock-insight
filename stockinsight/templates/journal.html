@@ -1,0 +1,15 @@
+{% from 'case_notes.html' import journal_entry, note_form, plan_form with context %}
+{% if view=='upcoming' %}
+  <h1>Upcoming research</h1>
+  {% if journal.instruments or journal.cases %}<details><summary>Plan a question</summary>{{ plan_form(none,journal) }}</details>{% endif %}
+  {% for entry in journal.upcoming %}{{ journal_entry(entry) }}
+  {% else %}<p>No pending questions or review conditions.</p>{% endfor %}
+{% else %}
+  <h1>Research journal</h1>
+  {% if journal.cases or journal.instruments %}
+    <details><summary>Add a note</summary>{{ note_form(none,journal) }}</details>
+    <details><summary>Plan a question</summary>{{ plan_form(none,journal) }}</details>
+  {% else %}<p><a href="/universe">Import a watchlist</a> to start a journal for a listing.</p>{% endif %}
+  {% for entry in journal.entries %}{{ journal_entry(entry) }}
+  {% else %}<p>No journal entries yet.</p>{% endfor %}
+{% endif %}

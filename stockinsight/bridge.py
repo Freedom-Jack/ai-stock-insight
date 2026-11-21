@@ -3,7 +3,7 @@
 import json
 import re
 
-from . import evidence, gaps, providers
+from . import announcement_research, evidence, gaps, providers
 from .db import is_fixture, now, uid, write
 from .research import authorized, encode, renew
 
@@ -126,6 +126,7 @@ class Bridge:
                 self.context["cutoff"],
                 fixture=self.fixture,
                 commit_seq=watermark,
+                origin="issuer_news" if self.context.get("method") == announcement_research.METHOD else None,
                 limit=SEARCH_LIMIT + 1,
                 offset=(page - 1) * SEARCH_LIMIT,
             )
@@ -154,6 +155,7 @@ class Bridge:
                 for key in ("message", "receipt_id", "document_id", "cached", "checked_at", "retry_at")
                 if key in result
             }
+            data["provider"] = args["provider"]
             return result["status"], data, []
         if name == "record_gap":
             # Its referenced read is checked atomically with appending the declaration below.
@@ -171,7 +173,7 @@ class Bridge:
                 continue
             if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,96}", value):
                 raise ValueError("Invalid tool parameter")
-            if key == "provider" and value not in ("issuer", "sec"):
+            if key == "provider" and value not in ("issuer", "sec", "issuer_news"):
                 raise ValueError("Source route unavailable")
         count = self.db.execute(
             "SELECT count(*) FROM receipts WHERE run_id=?", (self.lease.run_id,)

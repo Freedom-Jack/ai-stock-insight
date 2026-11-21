@@ -6,7 +6,7 @@ import os
 import re
 import stat
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, localcontext
 from html.parser import HTMLParser
 from pathlib import Path
@@ -323,11 +323,14 @@ FROM evidence_passages p JOIN documents d ON p.document_id=d.id
 """
 
 
-def _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=None, query=None, limit=50, offset=0):
+def _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=None, query=None, limit=50, offset=0, origin=None):
     if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or offset < 0:
         raise ValueError("Invalid evidence search window.")
     conditions = ["d.instrument_id=?"]
     args = [instrument_id]
+    if origin is not None:
+        conditions.append("d.origin=?")
+        args.append(origin)
     if cutoff:
         conditions.append("p.available_at<=?")
         args.append(utc(cutoff))
@@ -378,9 +381,9 @@ def _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=None, que
 
 
 def search(
-    conn, instrument_id, cutoff=None, *, query=None, fixture=None, commit_seq=None, limit=50, offset=0
+    conn, instrument_id, cutoff=None, *, query=None, fixture=None, commit_seq=None, limit=50, offset=0, origin=None
 ):
-    return _read(conn, instrument_id, cutoff, fixture, commit_seq, query=query, limit=limit, offset=offset)
+    return _read(conn, instrument_id, cutoff, fixture, commit_seq, query=query, limit=limit, offset=offset, origin=origin)
 
 
 def source_context(conn, document_id, cutoff):
@@ -679,6 +682,7 @@ def _sec_rows(raw, received, cik):
 
 
 def capture_public(conn, instrument, provider="issuer"):
+    from . import issuer_news
     from .universe import instrument as lookup
 
     if is_fixture(conn):
@@ -701,6 +705,10 @@ def capture_public(conn, instrument, provider="issuer"):
         host, path = providers.ISSUER_HOST, providers.ISSUER_PATH
         title = "NVIDIA Q2 FY25 earnings release · GAAP revenue table"
         retention, published, precision = "selected_cells_and_hash", "2024-08-28", "day (publisher)"
+    elif provider == "issuer_news" and cik == "0001045810":
+        host, path = providers.ISSUER_HOST, issuer_news.PATH
+        title = "NVIDIA Newsroom press releases"
+        retention, published, precision = "rss_metadata_and_hash", None, "publisher timestamps per item"
     elif provider == "sec":
         contact = providers.sec_contact()
         if not contact:
@@ -746,17 +754,27 @@ def capture_public(conn, instrument, provider="issuer"):
                 "evidence_ids": ids,
             }
     with write(conn) as seq:
-        waiting = conn.execute(
-            """SELECT 1 FROM source_checks WHERE provider=? AND (retry_at>? OR
-               (julianday(?) - julianday(started_at) BETWEEN 0 AND 1.0/86400) OR
-               (instrument_id=? AND status='running' AND julianday(?) - julianday(started_at) BETWEEN 0 AND 1.0/1440))
-               LIMIT 1""",
-            (provider, started, started, instrument_id, started),
+        # The source route identifies the cached document and the receipt. The
+        # publisher's hostname determines who must observe a transport cooldown.
+        started = utc(now())
+        stamp = datetime.fromisoformat(started)
+        minute_ago = utc((stamp - timedelta(minutes=1)).isoformat())
+        routes = ("issuer", "issuer_news") if host == providers.ISSUER_HOST else ("sec",)
+        placeholders = ",".join("?" for _ in routes)
+        bounds = conn.execute(
+            f"""SELECT max(retry_at), max(started_at), max(CASE WHEN status='running' THEN started_at END)
+                FROM source_checks WHERE provider IN ({placeholders}) AND (retry_at>? OR started_at>?)""",
+            (*routes, started, minute_ago),
         ).fetchone()
-        if waiting:
+        deadline, latest_start, in_flight = bounds
+        if latest_start:
+            spacing = utc((datetime.fromisoformat(latest_start) + timedelta(seconds=1)).isoformat())
+            deadline = max(deadline or "", spacing)
+        if (deadline and deadline > started) or (in_flight and in_flight > minute_ago):
             return {
                 "status": "rate_limited",
                 "message": "An in-progress check or source retry deadline is active.",
+                "retry_at": deadline if deadline and deadline > started else None,
                 "evidence_ids": [],
             }
         check_id = uid("check")
@@ -767,9 +785,18 @@ def capture_public(conn, instrument, provider="issuer"):
         )
     status, message, document_id, ids, retry_at = "ok", "Dated public facts captured.", None, [], None
     try:
-        raw = providers._fetch(host, path, headers=headers)
+        options = {"limit": issuer_news.MAX_BYTES} if provider == "issuer_news" else {}
+        raw = providers._fetch(host, path, headers=headers, **options)
         received = utc(now())
-        rows = _issuer_rows(raw, received) if provider == "issuer" else _sec_rows(raw, received, cik)
+        if provider == "issuer_news":
+            rows = issuer_news.rows(raw, received)
+            if not rows:
+                raise providers.SourceError("partial", "The feed returned no qualifying issuer announcements.")
+            message = f"Read {len(rows)} dated issuer announcements."
+        elif provider == "issuer":
+            rows = _issuer_rows(raw, received)
+        else:
+            rows = _sec_rows(raw, received, cik)
         if not rows:
             raise providers.SourceError(
                 "partial", "No qualifying reported standalone quarterly USD facts in the response."

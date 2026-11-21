@@ -70,7 +70,7 @@ _FUNCTIONS = {
     "get_evidence": ("Read one exact permitted passage from the case evidence.", _object({"id": TEXT})),
     "capture_public": (
         "Collect the approved public source for this listing and archive its version.",
-        _object({"provider": {"type": "string", "enum": ["issuer", "sec"]}}),
+        _object({"provider": {"type": "string", "enum": ["issuer", "sec", "issuer_news"]}}),
     ),
     "compare_financials": (
         "Compute a compatible period trend from two observed passage IDs.",

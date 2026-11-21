@@ -96,9 +96,19 @@ def capabilities(conn=None):
             "configured": False,
             "coverage": "No verified interval, session, adjustment basis or delay",
         },
+        {
+            "id": "issuer_news",
+            "provider": "NVIDIA Newsroom",
+            "operation": "press_release_feed",
+            "configured": True,
+            "coverage": "Published NVIDIA announcements in the current rolling feed.",
+            "source_url": "https://nvidianews.nvidia.com/rss",
+            "cadence": "Opt-in foreground schedule with a one-hour success cache.",
+            "retention": "headline, official URL, publication timestamp and feed hash",
+        },
     ]
     if conn is not None:
-        for entry in entries[:2]:
+        for entry in (e for e in entries if e["id"] in ("issuer", "issuer_news", "sec")):
             row = conn.execute(
                 """SELECT id AS receipt_id,instrument_id,started_at,finished_at,status,document_id,retry_at
                    FROM source_checks WHERE provider=? ORDER BY started_at DESC LIMIT 1""",
