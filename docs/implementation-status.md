@@ -1,6 +1,23 @@
 # Stock Insight implementation record
 
-## Current decision after the I1/I2 repair
+## Current decision after the second bounded repair
+
+**I2 acceptance and I3 remain on hold for targeted independent re-review.** This pass started at `6fbc121ffbbfa0735cea76b67f116d6d109d8fe4` on the reported worktree and branch. The independent reviewer confirmed High 1, High 4, High 5 and Medium 6. The second pass addressed High 2, High 3, Medium 7 and Medium 8. [Independent dispositions](implementation-rereview.md) · [Second-pass rules and evidence](implementation-remediation.md#second-repair-pass-at-6fbc121)
+
+| Work IDs | Second-pass state |
+|---|---|
+| R06, X01/X04 | Receipt-linked recovery for reversed comparison operands, compatible observations and discoverable worker search results. Retried calculations and earlier brief manifests retain their history. |
+| F02/F03, R04, X04 | Source-edition and retained qualification checks at freeze. Current, latest-saved and fixed-cutoff questions have distinct acceptance conditions. Per-claim context IDs and the selected financial calculation are auditable. |
+| R04/R06, X01/X02 | Market-move and accounting questions with the same revenue evidence can reach different dispositions. Fiscal-period and currency/unit requirements remain attached to each requested metric. New briefs use `sourced_company_review.v3` and `compare_financials.v1` on schema 2. |
+| F04, W01/W02 | Whole-snapshot field validation accepts qualified PNL/CASH alongside other listings, preserves provisional symbols and rejects private reports before retention. |
+
+The four previously confirmed fixes remain covered by the original fabricated-prose, cross-list identity, two-desk browser authentication and continuation-replay tests. No work on I3 was started.
+
+**Repair checkpoint.** `f081d9b236ff0584f9844dae8196e19fb10fece7` contains the implementation and regression tests. The original checkpoint passed 136 tests. The repair passed **151 tests with zero skips**, including all 68 Stockwatch tests and native Edge. The verified schema-2 continuation retained its reviewed historical row, and the Stockwatch monitor replay added zero duplicate alerts. Both original review documents are byte-identical and remain the only untracked files after the documentation checkpoint. [Detailed verification and limits](implementation-remediation.md#verification-boundaries-for-the-second-pass)
+
+**Integration boundaries.** The NVIDIA fixture returned 100 to 120 USD million (+20%) and two missing inputs. The ordinary scripted MSFT control returned 80 to 120 USD (+50%). A separate live, unauthenticated NVIDIA issuer request reproduced the historical 26,044 to 30,040 USD million comparison (+15.3433%), receipt `check_329dd65ec00eb1a9a348b49e`. Actual live model execution, live SEC acquisition and entitled Fiscal access remain unverified. The no-spend boundary remains in force.
+
+## First repair checkpoint at 6fbc121
 
 **Hold I2 acceptance and I3 for independent re-review.** On November 20, 2026 (New York), the repair pass addressed High · 1–5 and Medium · 6–8 from the independent review. The implementation commit is `48bdb8e7e7936ce738aed8076b73d945f5f17c81` on `codex/stock-insight-i1-i2`, directly following the reviewed commit `bfb55d1bdda4527e0789935b6fbef9766a8aefce`. The supplied review is the sole untracked file. The next commit records the repair evidence in documentation. [Per-finding reproductions, fixes and controls](implementation-remediation.md) · [Original review](implementation-review.md)
 
@@ -65,4 +82,4 @@ Full permitted bytes use SHA-256-addressed files. Restricted issuer pages retain
 - **I5 personal daily use**. U01/U02, O01. Complete Today, Upcoming, Companies & themes, Research, Journal and Status, user goals, review conditions and laptop interruption recovery.
 - **I6 release/server readiness**. O01–O05. Backups with referenced evidence, restore/export, supervision, quotas, off-host health and notifications, and commissioning on a selected host. No automatic backup destination, off-device protection or 24/7 operation is configured.
 
-The next action is independent re-review of the eight repairs, the saved NVIDIA fixture, the ordinary Microsoft controls and the separately acquired public issuer evidence. I2 acceptance and commencement of I3 remain on hold. The complete work-item definitions remain in the [integrated build plan](stock-insight-v3/delivery/BUILD_PLAN.md).
+The next action is targeted independent re-review of High 2, High 3, Medium 7 and Medium 8, with the four confirmed-fix controls available for regression. The authenticated I2 gate and I3 remain on hold. The remaining I3–I6 work-item definitions stay in the [integrated build plan](stock-insight-v3/delivery/BUILD_PLAN.md).
