@@ -1,8 +1,23 @@
 # Stock Insight implementation record
 
-## Review boundary
+## Current decision after the I1/I2 repair
 
-I1 and I2 are the review milestone on `codex/stock-insight-i1-i2`. The operator chose a free fixture investigation and a separate live public-data check. The API investigator stays disabled. I3–I6 remain in the release plan pending independent review.
+**Hold I2 acceptance and I3 for independent re-review.** On November 20, 2026 (New York), the repair pass addressed High · 1–5 and Medium · 6–8 from the independent review. The implementation commit is `48bdb8e7e7936ce738aed8076b73d945f5f17c81` on `codex/stock-insight-i1-i2`, directly following the reviewed commit `bfb55d1bdda4527e0789935b6fbef9766a8aefce`. The supplied review is the sole untracked file. The next commit records the repair evidence in documentation. [Per-finding reproductions, fixes and controls](implementation-remediation.md) · [Original review](implementation-review.md)
+
+| Work IDs | Repair state and actual verification |
+|---|---|
+| F02/F03, R04/R06, X01/X04 | Schema 2 retains v1 editions, briefs and review history. New briefs use `sourced_company_review.v2` and `compare_financials.v1`. The service checks typed observations, calculation inputs, missing evidence and material pre-freeze revisions. Microsoft controls covered correct revenue, a false dividend, honest partials, a resolved gap, a corrected current figure and a valid historical figure. |
+| F04, W01/W02, U01 | Rechecked shared contract and issuer bindings at confirmation. Stale previews failed across restart. Compatible lists shared their instrument, and explicit permitted corrections left an audit record. Qualified CASH and MSFT passed the strict instrument projection. |
+| X01/X04, O04, U01/O01 | One Edge profile authenticated to both loopback desks and submitted a form to each. A third port received an anonymous request. Replaying the same continuation across restart produced one additional job, brief and inbox row. |
+| X02/X03, O03, S01 | Actual unauthenticated NVIDIA issuer HTTPS is enabled and verified. The ordinary Microsoft investigation used scripted model transport and SEC packets. Fiscal used mock transport. Live model, SEC contact, entitled Fiscal operations and broker integrations remain unverified or disabled. |
+
+**Verification.** The reviewed build passed 112 tests. The repaired tree passed **136 tests with zero skips**, including all 68 original Stockwatch regressions, the installed Fiscal SDK contract and headless native Edge. The offline Stockwatch monitor demo added one linked issuer follow-up and added zero on replay. A migration smoke test preserved an accepted v1 row and added a v2 continuation. Local fixtures produced synthetic NVIDIA revenue of 100 to 120 USD million (+20%). The ordinary MSFT scripted comparison produced 80 to 120 million USD (+50%). A separate live public acquisition of NVIDIA's historical GAAP table returned 26,044 to 30,040 USD million (+15.3433%), receipt `check_60255a6ae5a23059bd0e8068`. Actual live model executions and paid calls were zero. [Verification ledger and reproduction commands](implementation-remediation.md#verification-and-integration-limits)
+
+**Outstanding.** Independent re-review is next. The financial method accepts a bounded set of supported observations and comparisons. Human assessment, live A17/A18 model/provider evidence, custom-directory permission preflight, WSL and longitudinal operation remain open. The original work-item history and full release scope follow.
+
+## Original milestone at bfb55d1
+
+The entries through the original verification ledger describe the build submitted for the first review. The operator selected a free fixture investigation and a separate live public-data check.
 
 ## Starting point and decisions
 
@@ -22,7 +37,7 @@ I1 and I2 are the review milestone on `codex/stock-insight-i1-i2`. The operator 
 | R04, R06 | Financial comparisons and actionable capability gaps implemented for on-demand cases. Price and valuation capabilities remain limited. | Decimal financial comparison, period/basis/unit compatibility, near-zero denominators, immutable versions and deduplicated gaps tied to actual tool receipts |
 | S01, U01, O01 | I1/I2 slices delivered. Named historical issuer capture and SEC concept adapter. Private Research, Companies & themes, and Status views. | Local browser form flow, authentication, Host/Origin, CSRF, acceptance and review tested through a real loopback Uvicorn server. Broader sources, six complete surfaces and server supervision are later work. |
 
-## Verification ledger
+## Original verification ledger
 
 The original **68 Stockwatch tests passed** before implementation. On this workstation, the sandbox's virtual Windows temp directory failed five Stockwatch HTML file replacements. Running the same tests with TEMP and TMP pointing to a workspace-local temporary directory passed with unchanged Stockwatch code.
 
@@ -50,4 +65,4 @@ Full permitted bytes use SHA-256-addressed files. Restricted issuer pages retain
 - **I5 personal daily use**. U01/U02, O01. Complete Today, Upcoming, Companies & themes, Research, Journal and Status, user goals, review conditions and laptop interruption recovery.
 - **I6 release/server readiness**. O01–O05. Backups with referenced evidence, restore/export, supervision, quotas, off-host health and notifications, and commissioning on a selected host. No automatic backup destination, off-device protection or 24/7 operation is configured.
 
-The next action is independent review of the saved fixture brief, live issuer provenance, private interface and acceptance tests. The complete work-item definitions remain in the [integrated build plan](stock-insight-v3/delivery/BUILD_PLAN.md).
+The next action is independent re-review of the eight repairs, the saved NVIDIA fixture, the ordinary Microsoft controls and the separately acquired public issuer evidence. I2 acceptance and commencement of I3 remain on hold. The complete work-item definitions remain in the [integrated build plan](stock-insight-v3/delivery/BUILD_PLAN.md).
