@@ -323,7 +323,9 @@ FROM evidence_passages p JOIN documents d ON p.document_id=d.id
 """
 
 
-def _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=None, query=None):
+def _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=None, query=None, limit=50, offset=0):
+    if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or offset < 0:
+        raise ValueError("Invalid evidence search window.")
     conditions = ["d.instrument_id=?"]
     args = [instrument_id]
     if cutoff:
@@ -364,7 +366,8 @@ def _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=None, que
         args.append(" AND ".join(f'"{term}"' for term in terms))
     sql = _SELECT + " WHERE " + " AND ".join(conditions)
     sql += """ ORDER BY d.commit_seq DESC, (p.financial IS NULL),
-               json_extract(p.financial,'$.period_end') DESC, p.locator LIMIT 50"""
+               json_extract(p.financial,'$.period_end') DESC, p.locator, d.id, p.id LIMIT ? OFFSET ?"""
+    args.extend((limit, offset))
     records = []
     for row in conn.execute(sql, args):
         result = dict(row)
@@ -374,8 +377,19 @@ def _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=None, que
     return records
 
 
-def search(conn, instrument_id, cutoff=None, *, query=None, fixture=None, commit_seq=None):
-    return _read(conn, instrument_id, cutoff, fixture, commit_seq, query=query)
+def search(
+    conn, instrument_id, cutoff=None, *, query=None, fixture=None, commit_seq=None, limit=50, offset=0
+):
+    return _read(conn, instrument_id, cutoff, fixture, commit_seq, query=query, limit=limit, offset=offset)
+
+
+def source_context(conn, document_id, cutoff):
+    """Retained narrative accompanying the cells, bounded by public availability."""
+    return conn.execute(
+        """SELECT id,locator,text FROM evidence_passages WHERE document_id=? AND financial IS NULL
+           AND (? IS NULL OR available_at<=?) ORDER BY locator""",
+        (document_id, cutoff, cutoff),
+    ).fetchall()
 
 
 def still_supported(conn, passage, cutoff):
@@ -405,9 +419,18 @@ def still_supported(conn, passage, cutoff):
     if not rows:
         return True
     if passage["financial"]:
-        # The same cell can move within a provider response. Compare the dated
-        # financial observation including its issuer, basis, units and value.
-        return any(r["financial"] and json.loads(r["financial"]) == passage["financial"] for r in rows)
+        # Compare the full retained context, even if a footnote uses a new locator.
+        # The financial cell itself may have moved without changing its meaning.
+        original_notes = {
+            (r["locator"], r["text"]) for r in source_context(conn, passage["document_id"], cutoff)
+        }
+        latest_notes = {(r["locator"], r["text"]) for r in rows if r["financial"] is None}
+        return original_notes == latest_notes and any(
+            r["financial"]
+            and json.loads(r["financial"]) == passage["financial"]
+            and r["text"] == passage["text"]
+            for r in rows
+        )
     return any(r["locator"] == passage["locator"] and r["text"] == passage["text"] for r in rows)
 
 
@@ -466,7 +489,7 @@ def supports_actual(fact, cik):
             "common share",
             "per share",
         }
-    if metric in {"revenue", "net_income", "free_cash_flow", "share_repurchases"}:
+    if metric in {"revenue", "net_income", "free_cash_flow", "share_repurchases", "total_dividends"}:
         return basis == "total" and unit in {
             currency,
             *(f"{currency} {scale}" for scale in ("thousand", "million", "billion", "trillion")),

@@ -11,7 +11,7 @@ from . import assessment, gaps, universe
 from .assessment import required_checks
 from .db import instant, is_fixture, now, uid, write
 
-METHOD = "sourced_company_review.v2"
+METHOD = "sourced_company_review.v3"
 
 
 SCHEMA = """
@@ -319,8 +319,9 @@ def validate(db, run, body, receipts):
     usable = {rid for rid, refs in calculation_inputs.items() if not superseded.intersection(refs)}
     if any(rid in calculation_inputs and rid not in usable for rid in body["calculations"]):
         raise ValueError("Calculation input superseded. Read the eligible edition and recompute.")
-    if set(body["calculations"]) != usable or len(body["calculations"]) != len(usable):
-        raise ValueError("Calculation references must match the eligible service receipts")
+    selected = set(body["calculations"])
+    if not selected <= usable or len(body["calculations"]) != len(selected):
+        raise ValueError("Select distinct eligible calculation receipts for the submitted claims")
     for claim_item in body["claims"]:
         if not isinstance(claim_item, dict) or set(claim_item) != {"text", "type", "evidence_refs"}:
             raise ValueError("Invalid claim fields")

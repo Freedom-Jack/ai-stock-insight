@@ -16,7 +16,7 @@ import time
 
 from . import assessment
 
-VERSION = "responses-functions/2"
+VERSION = "responses-functions/3"
 MAX_INPUT_BYTES = 48_000
 MAX_RESPONSE_BYTES = 256_000
 MAX_OUTPUT_TOKENS = 2_048
@@ -63,6 +63,10 @@ _FUNCTIONS = {
         "Find dated passages and accounting observations for the assigned listing.",
         _object({}),
     ),
+    "next_evidence_page": (
+        "Use the previous page's next_cursor to read more saved passages from the same search.",
+        _object({"cursor": TEXT}),
+    ),
     "get_evidence": ("Read one exact permitted passage from the case evidence.", _object({"id": TEXT})),
     "capture_public": (
         "Collect the approved public source for this listing and archive its version.",
@@ -97,7 +101,7 @@ _INSTRUCTIONS = (
     "a quote, price, comparison, tool receipt or historical consensus. Read the qualified primary "
     "passages using get_evidence. Call compare_financials on matching observations to support any trend. "
     "If the target metric/period is missing, record_gap against a current search receipt. Include the "
-    "retrieved passage IDs, every successful calculation receipt ID and only the outstanding_gap_ids "
+    "retrieved passage IDs, the successful calculation receipts supporting your answer and only the outstanding_gap_ids "
     "from the last service reply. Choose complete, partial with limitations, or blocked if the "
     "question cannot be answered. The host renders financial assertions from typed observations."
 )
@@ -256,7 +260,7 @@ def _action(response):
 
 
 def _tool_output(name, envelope):
-    if name != "search_evidence" or not isinstance(envelope.get("data"), dict):
+    if name not in ("search_evidence", "next_evidence_page") or not isinstance(envelope.get("data"), dict):
         return envelope
     if not isinstance(envelope["data"].get("passages"), list):
         return envelope
@@ -264,15 +268,23 @@ def _tool_output(name, envelope):
     # A large history of quarterly observations should still fit the first turn.
     matches = envelope["data"]["passages"]
     summaries = []
-    for row in matches[:16]:
+    for row in matches:
         summary = {k: row.get(k) for k in ("id", "document_id", "title", "available_at", "fixture")}
         summary["excerpt"] = row.get("text", "")[:220]
         if row.get("financial"):
-            summary["financial"] = {k: row["financial"].get(k) for k in ("metric", "period_label", "role")}
+            summary["financial"] = {
+                k: row["financial"].get(k)
+                for k in ("metric", "period_label", "basis", "unit", "duration", "share_basis", "role")
+            }
         summaries.append(summary)
     return {
         **envelope,
-        "data": {"passages": summaries, "returned_matches": len(matches), "shown": len(summaries)},
+        "data": {
+            **envelope["data"],
+            "passages": summaries,
+            "returned_matches": len(matches),
+            "shown": len(summaries),
+        },
         "evidence_ids": [row["id"] for row in summaries],
     }
 
@@ -281,13 +293,15 @@ def _run(question, context, call, config, runtime):
     # The static projection excludes local paths, app credentials, session
     # material and arbitrary future fields added to the internal context.
     instrument = context["instrument"]
+    objective = assessment.objective(question)
     assignment = {
         "question": question,
         "method": context["method"],
         "cutoff": context.get("cutoff"),
         "required_checks": context.get("required_checks", []),
-        "requested_metrics": assessment.objective(question).metrics,
-        "requested_periods": assessment.objective(question).periods,
+        "requested_metrics": objective.metrics,
+        "requested_periods": objective.periods,
+        "requirements": objective.requirements,
         "instrument": {
             key: instrument.get(key)
             for key in ("id", "ticker", "company_id", "listing_exchange", "currency", "resolution_status")
@@ -401,7 +415,21 @@ def _fixture(question, context, call):
         if passage.get("financial"):
             observations.append(passage)
     observations.sort(key=lambda p: p["financial"]["period_end"], reverse=True)
-    if len(observations) >= 2:
+    intent = assessment.objective(question)
+    missing = [
+        (metric, period)
+        for metric, period in intent.requirements
+        if not any(
+            assessment.matches_requirement(p["financial"], intent, metric, period) for p in observations
+        )
+    ]
+    for metric, period in missing:
+        if search["status"] == "ok":
+            check(
+                "record_gap", {"metric": metric, "period": period, "attempt_receipt_id": search["receipt_id"]}
+            )
+    pair_covers_question = not intent.periods or intent.trend or len(intent.periods) >= 2
+    if len(observations) >= 2 and pair_covers_question and not any(m == "revenue" for m, _ in missing):
         outcome = check(
             "compare_financials",
             {"current": observations[0]["id"], "baseline": observations[1]["id"], "kind": "period_trend"},
@@ -422,7 +450,7 @@ def _fixture(question, context, call):
     return Result(
         body,
         {
-            "adapter": "fixture/2",
+            "adapter": "fixture/3",
             "actual_model": None,
             "reasoning_effort": None,
             "billing_mode": "offline",

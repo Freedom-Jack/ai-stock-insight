@@ -45,21 +45,22 @@ def _matches(passage, metric, period, objective):
         return False
     if metric and fact.get("metric") != metric:
         return False
-    return assessment.matches_dimensions(fact, objective) and assessment.period_matches(fact, period)
+    dimensions = objective.dimensions_for(metric, period)
+    return assessment.matches_dimensions(fact, dimensions) and assessment.period_matches(fact, period)
 
 
 def _objective_proof(requested, passages):
-    metrics = requested.metrics or (None,)
-    periods = requested.periods or (None,)
-    if not requested.metrics and not requested.periods:
+    if not requested.bindings_complete:
+        return []
+    requirements = requested.requirements or [(None, p) for p in requested.periods]
+    if not requirements:
         return [p["id"] for p in passages]
     proof = set()
-    for metric in metrics:
-        for period in periods:
-            matched = [p["id"] for p in passages if _matches(p, metric, period, requested)]
-            if not matched:
-                return []
-            proof.update(matched)
+    for metric, period in requirements:
+        matched = [p["id"] for p in passages if _matches(p, metric, period, requested)]
+        if not matched:
+            return []
+        proof.update(matched)
     return sorted(proof)
 
 
@@ -70,7 +71,7 @@ def missing_input(db, run_id, args):
         raise ValueError("Use a metric identifier, for example dividend_per_share.")
     period = _period(args["period"])
     receipt = db.execute(
-        "SELECT * FROM receipts WHERE run_id=? AND tool='search_evidence' ORDER BY commit_seq DESC LIMIT 1",
+        "SELECT * FROM receipts WHERE run_id=? AND tool IN ('search_evidence','next_evidence_page') ORDER BY commit_seq DESC LIMIT 1",
         (run_id,),
     ).fetchone()
     if (
@@ -82,14 +83,19 @@ def missing_input(db, run_id, args):
     run = db.execute("SELECT context FROM runs WHERE id=?", (run_id,)).fetchone()
     context = json.loads(run["context"])
     requested = assessment.objective(context["question"])
+    dimensions = requested.dimensions_for(metric, period)
     # Include earlier reads even when a later page has filled with unrelated documents.
     reads = db.execute(
-        "SELECT tool,output FROM receipts WHERE run_id=? AND tool IN ('search_evidence','get_evidence') AND status='ok'",
+        "SELECT tool,version,output FROM receipts WHERE run_id=? AND tool IN ('search_evidence','next_evidence_page','get_evidence') AND status='ok'",
         (run_id,),
     )
-    for operation, encoded in reads:
+    for operation, version, encoded in reads:
         data = json.loads(encoded)["data"]
-        for passage in data["passages"] if operation == "search_evidence" else [data]:
+        passages = data["passages"] if operation != "get_evidence" else [data]
+        if operation == "search_evidence" and version == "1":
+            # The previous worker projection exposed just the first sixteen IDs.
+            passages = passages[:16]
+        for passage in passages:
             if (
                 evidence.supports_actual(passage.get("financial") or {}, context["instrument"].get("cik"))
                 and _matches(passage, metric, period, requested)
@@ -99,8 +105,9 @@ def missing_input(db, run_id, args):
     return {
         "metric": metric,
         "period": period,
-        **{k: getattr(requested, k) for k in DIMENSIONS},
+        **{k: getattr(dimensions, k) for k in DIMENSIONS},
         "attempt_receipt_id": receipt["id"],
+        "search_has_more": bool(json.loads(receipt["output"])["data"].get("has_more")),
     }
 
 
@@ -129,9 +136,13 @@ CAPTURE_CAUSES = {
 }
 
 
-def _comparison(db, run_id, args):
+_SERIES_FIELDS = ("company", "metric", "period_start", "period_end")
+_COMPARABLE_FIELDS = ("currency", "unit", "basis", "share_basis", "duration")
+
+
+def _comparison(db, run_id, args, *, requirement=False):
     readings = db.execute(
-        "SELECT output FROM receipts WHERE run_id=? AND tool IN ('search_evidence','get_evidence') AND status='ok'",
+        "SELECT output FROM receipts WHERE run_id=? AND tool IN ('search_evidence','next_evidence_page','get_evidence') AND status='ok'",
         (run_id,),
     )
     facts = {}
@@ -139,17 +150,117 @@ def _comparison(db, run_id, args):
         data = json.loads(row["output"])["data"]
         for passage in data.get("passages", [data]):
             f = passage.get("financial") or {}
-            facts[passage["id"]] = [
-                f.get("company"),
-                f.get("metric"),
-                f.get("period_start"),
-                f.get("period_end"),
-            ]
-    return {
-        "kind": "comparison",
-        "operation": args["kind"],
-        "pair": [facts.get(args[k]) for k in ("current", "baseline")],
+            facts[passage["id"]] = f
+    left, right = (facts.get(args[k], {}) for k in ("current", "baseline"))
+    pair = [[f.get(k) for k in _SERIES_FIELDS] for f in (left, right)]
+    if any(not all(part) for part in pair) or left is right:
+        # An unknown ID, a non-financial cell, or a repeated operand is an input
+        # error. It supplies no evidence that the underlying metric is missing.
+        return None
+    if args["kind"] == "period_trend":
+        if pair[0][:2] != pair[1][:2] or pair[0][2:] == pair[1][2:]:
+            return None
+        # The question compares these two periods. Only the calculation needs
+        # an ordered current and baseline; a mistaken order is still this gap.
+        pair.sort()
+    dimensions = {
+        key: left[key] for key in _COMPARABLE_FIELDS if left.get(key) and left[key] == right.get(key)
     }
+    if requirement:
+        row = db.execute("SELECT context FROM runs WHERE id=?", (run_id,)).fetchone()
+        objective = assessment.objective(json.loads(row["context"])["question"])
+        rules = [rule for f in (left, right) for rule in _fact_rules(objective, f)]
+        for key in ("basis", "currency", "duration", "share_basis"):
+            explicit = {getattr(rule, key) for rule in rules if getattr(rule, key)}
+            if len(explicit) == 1:
+                value = next(iter(explicit))
+                if key in ("currency", "share_basis") and dimensions.get(key) != value:
+                    dimensions.pop("unit", None)
+                dimensions[key] = value
+        if "unit" in dimensions and any(
+            rule.unit_scale and rule.unit_scale not in dimensions["unit"].lower().split() for rule in rules
+        ):
+            del dimensions["unit"]
+    return {"kind": "comparison", "operation": args["kind"], "pair": pair, "dimensions": dimensions}
+
+
+def _stored_requirement(db, gap):
+    req = json.loads(gap["requirement"]) if gap["requirement"] else {"kind": gap["capability"]}
+    if req.get("kind") != "comparison" or "dimensions" in req:
+        return req
+    # Recover the intended series and its units from the genuine failed v2
+    # receipt. Leave the immutable prior requirement and reviewed brief intact.
+    row = db.execute(
+        """SELECT r.run_id,r.args FROM gap_attempts a JOIN receipts r ON r.id=a.receipt_id
+           WHERE a.gap_id=? AND r.tool='compare_financials' AND r.status='invalid_input'
+           ORDER BY r.commit_seq LIMIT 1""",
+        (gap["id"],),
+    ).fetchone()
+    return (_comparison(db, row["run_id"], json.loads(row["args"]), requirement=True) if row else None) or req
+
+
+def _proves_comparison(req, actual):
+    return bool(
+        actual
+        and "dimensions" in req
+        and req["operation"] == actual["operation"]
+        and req["pair"] == actual["pair"]
+        and all(actual["dimensions"].get(k) == v for k, v in req["dimensions"].items())
+    )
+
+
+def _fact_rules(objective, fact):
+    return [
+        objective.dimensions_for(metric, period)
+        for metric, period in objective.requirements
+        if metric == fact["metric"] and assessment.period_matches(fact, period)
+    ] or [objective]
+
+
+def _comparison_dimensions_match(objective, passages):
+    for passage in passages:
+        fact = passage["financial"]
+        if not any(assessment.matches_dimensions(fact, rule) for rule in _fact_rules(objective, fact)):
+            return False
+    return True
+
+
+def _eligible(db, context, passages):
+    return [
+        p
+        for p in passages
+        if evidence.still_supported(db, p, context["cutoff"])
+        and (not p["financial"] or evidence.supports_actual(p["financial"], context["instrument"].get("cik")))
+    ]
+
+
+def _earlier_proof(db, run, req):
+    context = json.loads(run["context"])
+    objective = assessment.objective(context["question"])
+    successes = db.execute(
+        """SELECT s.id,s.run_id,s.args,s.output FROM receipts s JOIN runs r ON r.id=s.run_id
+           JOIN jobs j ON j.id=r.job_id WHERE j.case_id=? AND s.tool='compare_financials'
+           AND s.status='ok' ORDER BY s.commit_seq DESC""",
+        (run["case_id"],),
+    )
+    for receipt in successes:
+        actual = _comparison(db, receipt["run_id"], json.loads(receipt["args"]))
+        if not _proves_comparison(req, actual):
+            continue
+        refs = json.loads(receipt["output"])["evidence_ids"]
+        try:
+            passages = [
+                evidence.get(db, context["instrument"]["id"], ref, context["cutoff"], fixture=is_fixture(db))
+                for ref in refs
+            ]
+            valid = _eligible(db, context, passages)
+            for version in {p["document_id"] for p in valid if p["retention"] == "full"}:
+                evidence.document_bytes(db, context["instrument"]["id"], version)
+        except ValueError:
+            continue
+        if len(valid) == 2 and _comparison_dimensions_match(objective, valid):
+            return receipt["id"]
+    return None
 
 
 def register(db, run, name, args, status, data, defaults, seq):
@@ -193,9 +304,26 @@ def register(db, run, name, args, status, data, defaults, seq):
                 )
             requirement["provider"] = provider
         elif name == "compare_financials":
-            requirement = _comparison(db, run["id"], args)
+            requirement = _comparison(db, run["id"], args, requirement=True)
+            if requirement is None:
+                return None
             signature = hashlib.sha256(json.dumps(requirement, sort_keys=True).encode()).hexdigest()[:16]
             capability = f"compare_financials ({args['kind']} {signature})"
+            existing = db.execute(
+                "SELECT g.id,g.capability,g.lifecycle,q.requirement FROM capability_gaps g JOIN gap_requirements q ON q.gap_id=g.id "
+                "WHERE g.case_id=? AND g.status=? AND json_extract(q.requirement,'$.kind')='comparison'",
+                (run["case_id"], cause),
+            )
+            matching = next((g for g in existing if _stored_requirement(db, g) == requirement), None)
+            if matching:
+                capability = matching["capability"]
+            if not matching or matching["lifecycle"] == "resolved":
+                prior = _earlier_proof(db, run, requirement)
+                if prior:
+                    # A still-valid case calculation is proof of availability. It grants
+                    # no read or submission permission to the new worker.
+                    data["covered_by_receipt_id"] = prior
+                    return None
     else:
         return None
     db.execute(
@@ -246,7 +374,26 @@ def describe(db, case_id, ids):
     return result
 
 
-def _capture_proof(db, run, gap_id, objective, readings):
+def _read_history(db, run, context):
+    """Return the latest worker-visible read of each still-eligible exact passage."""
+    rows = db.execute(
+        """SELECT tool,version,id,commit_seq,output FROM receipts WHERE run_id=? AND status='ok'
+           AND tool IN ('search_evidence','next_evidence_page','get_evidence') ORDER BY commit_seq""",
+        (run["id"],),
+    )
+    history = {}
+    for row in rows:
+        data = json.loads(row["output"])["data"]
+        passages = data["passages"] if row["tool"] != "get_evidence" else [data]
+        if row["tool"] == "search_evidence" and row["version"] == "1":
+            passages = passages[:16]
+        for p in passages:
+            history[p["id"]] = (row["commit_seq"], row["id"], p)
+    supported = _eligible(db, context, [p for _, _, p in history.values()])
+    return {p["id"]: history[p["id"]] for p in supported}
+
+
+def _capture_proof(db, run, gap_id, objective, history):
     # Legacy cases grouped failed transports under capture_public before the recorded
     # requirement became provider-specific. Require proof for each affected source.
     attempts = db.execute(
@@ -259,13 +406,20 @@ def _capture_proof(db, run, gap_id, objective, readings):
     for attempt in attempts:
         provider = json.loads(attempt["args"])["provider"]
         rows = db.execute(
-            """SELECT output FROM receipts WHERE run_id=? AND tool='capture_public' AND status='ok'
-               AND args=? AND commit_seq>?""",
+            """SELECT output,commit_seq FROM receipts WHERE run_id=? AND tool='capture_public' AND status='ok'
+               AND args=? AND commit_seq>? ORDER BY commit_seq""",
             (run["id"], attempt["args"], attempt["last_attempt"]),
         )
-        docs = {json.loads(row["output"])["data"].get("document_id") for row in rows}
+        docs = {}
+        for row in rows:
+            docs.setdefault(json.loads(row["output"])["data"].get("document_id"), row["commit_seq"])
         matches = _objective_proof(
-            objective, [p for p in readings if p["document_id"] in docs and p["origin"] == provider]
+            objective,
+            [
+                p
+                for seq, _, p in history.values()
+                if p["document_id"] in docs and seq > docs[p["document_id"]] and p["origin"] == provider
+            ],
         )
         if not matches:
             return []
@@ -275,7 +429,12 @@ def _capture_proof(db, run, gap_id, objective, readings):
 
 def reconcile(db, run, name, args, output, seq):
     """Only scope-checked evidence reads and comparable calculations may close an earlier gap."""
-    if output["status"] != "ok" or name not in ("search_evidence", "get_evidence", "compare_financials"):
+    if output["status"] != "ok" or name not in (
+        "search_evidence",
+        "next_evidence_page",
+        "get_evidence",
+        "compare_financials",
+    ):
         return
     gaps = db.execute(
         """SELECT g.*,q.requirement FROM capability_gaps g LEFT JOIN gap_requirements q ON q.gap_id=g.id
@@ -296,30 +455,40 @@ def reconcile(db, run, name, args, output, seq):
         ]
     else:
         passages = data.get("passages", [data])
-    eligible = [
-        p
-        for p in passages
-        if evidence.still_supported(db, p, context["cutoff"])
-        and (not p["financial"] or evidence.supports_actual(p["financial"], context["instrument"].get("cik")))
-    ]
+    eligible = _eligible(db, context, passages)
     readings = eligible if name != "compare_financials" else []
+    history = None
     for gap in gaps:
-        req = json.loads(gap["requirement"]) if gap["requirement"] else {"kind": gap["capability"]}
+        req = _stored_requirement(db, gap)
         proof = []
+        receipts = {output["receipt_id"]}
         if req["kind"] == "metric":
             proof = [p["id"] for p in readings if _matches(p, req["metric"], req["period"], objective)]
-        elif req["kind"] == "search_evidence":
-            proof = _objective_proof(objective, readings)
-        elif req["kind"] == "capture_public" and readings:
-            proof = _capture_proof(db, run, gap["id"], objective, readings)
+        elif req["kind"] in ("search_evidence", "capture_public") and readings:
+            if history is None:
+                history = _read_history(db, run, context)
+            if req["kind"] == "capture_public":
+                proof = _capture_proof(db, run, gap["id"], objective, history)
+            else:
+                last = db.execute(
+                    """SELECT max(r.commit_seq) FROM gap_attempts a JOIN receipts r ON r.id=a.receipt_id
+                       WHERE a.gap_id=?""",
+                    (gap["id"],),
+                ).fetchone()[0]
+                proof = _objective_proof(objective, [p for n, _, p in history.values() if n > last])
+            receipts = {history[ref][1] for ref in proof}
         elif (
             req["kind"] == "comparison"
             and name == "compare_financials"
-            and req == _comparison(db, run["id"], args)
+            and _proves_comparison(req, _comparison(db, run["id"], args))
             and len(eligible) == len(output["evidence_ids"])
+            and _comparison_dimensions_match(objective, eligible)
         ):
             proof = output["evidence_ids"]
         if proof:
+            output.setdefault("resolved_gaps", []).append(
+                {"gap_id": gap["id"], "passage_ids": proof, "proof_receipt_ids": sorted(receipts)}
+            )
             db.execute(
                 "INSERT INTO gap_resolutions VALUES(?,?,?,?)",
                 (gap["id"], output["receipt_id"], json.dumps(proof), seq),

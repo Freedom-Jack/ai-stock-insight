@@ -229,7 +229,6 @@ class UniverseTests(unittest.TestCase):
         for raw in (
             b"CASH",
             b"ticker,conid\nCASH,unknown",
-            b"ticker,conid\nCASH,9888",
             b"ticker,cash,quantity\nCASH,991771,112339",
         ):
             rejected = self.observe(raw)
@@ -239,6 +238,85 @@ class UniverseTests(unittest.TestCase):
         source = next(s for s in u.universe(self.conn)["sources"] if s["id"] == "personal")
         self.assertEqual(source["active_snapshot_id"], good["id"])
         self.assertNotIn("991771", "\n".join(self.conn.iterdump()))
+
+    def test_ticker_column_admits_qualified_london_and_us_listings_alongside_msft(self):
+        for source, listing, exchange, currency in (
+            ("london", "PNL", "XLON", "GBX"),
+            ("london_control", "PCT", "XLON", "GBX"),
+            ("united_states", "CASH", "NASDAQ", "USD"),
+        ):
+            with self.subTest(listing=listing):
+                packet = (
+                    f"ticker,listing_exchange,security_type,currency\r\n"
+                    f'"{listing.lower()}",{exchange},STK,{currency}\r\nMSFT,NASDAQ,STK,USD\r\n'
+                ).encode("utf-8-sig")
+                snapshot = self.observe(packet, source_id=source)
+                self.assertEqual((snapshot["state"], len(snapshot["entries"])), ("complete", 2))
+                members = [i for i in self.members() if source in i["source_ids"]]
+                self.assertEqual({i["ticker"] for i in members}, {listing, "MSFT"})
+                item = next(i for i in members if i["ticker"] == listing)
+                self.assertEqual(
+                    (item["listing_exchange"], item["currency"], item["security_type"]),
+                    (exchange, currency, "STK"),
+                )
+                self.assertEqual(item["resolution_status"], "identified_listing")
+        self.assertEqual(len([i for i in self.members() if i["ticker"] == "MSFT"]), 1)
+
+    def test_explicit_symbol_column_preserves_provisional_and_unsupported_identity(self):
+        symbols = self.observe(b"ticker\nPNL\nCASH\nPCT", source_id="symbols")
+        listing = self.observe(
+            b"ticker,listing_exchange,security_type,currency\nPNL,XLON,STK,GBX", source_id="listed"
+        )
+        self.assertEqual((symbols["state"], listing["state"]), ("complete", "complete"))
+        incomplete = [i for i in self.members() if i["source_ids"] == ["symbols"]]
+        self.assertEqual({i["ticker"] for i in incomplete}, {"PNL", "CASH", "PCT"})
+        self.assertTrue(
+            all(i["resolution_status"] == "provisional" and i["company_id"] is None for i in incomplete)
+        )
+        self.assertEqual(len([i for i in self.members() if i["ticker"] == "PNL"]), 2)
+        contract = self.observe(b"ticker,conid\nCASH,09888", source_id="broker_contract")
+        self.assertEqual(contract["state"], "complete")
+        unresolved = next(i for i in self.members() if i["source_ids"] == ["broker_contract"])
+        self.assertEqual((unresolved["conid"], unresolved["resolution_status"]), ("09888", "provisional"))
+        fx = self.observe(b"ticker,security_type,currency\nEUR,CASH,USD", source_id="unsupported")
+        self.assertEqual(fx["state"], "complete")
+        self.assertEqual(
+            next(i for i in self.members() if i["ticker"] == "EUR")["resolution_status"], "unclassified"
+        )
+        ambiguous = self.observe(b"PNL", source_id="symbols")
+        self.assertEqual(ambiguous["state"], "rejected")
+        self.assertIn("ticker column", ambiguous["reason"])
+
+    def test_private_reports_or_mixed_invalid_rows_preserve_last_list_and_leave_no_payload(self):
+        listing = self.observe(
+            b"ticker,listing_exchange,security_type,currency\nPNL,XLON,STK,GBX\nMSFT,NASDAQ,STK,USD"
+        )
+        before = self.members()
+        marker = "SENTRY"
+        account = "DU876543"
+        rows = [
+            f"ticker,account,quantity\nPNL,{account},100\n{marker},{account},500",
+            f"PNL,position,pnl\n{marker},240,193",
+            f"pnl\n991700\n{marker}",
+            f"ticker,conid\n{marker},003381\nPNL,{account}",
+            f"ticker,listing_exchange,security_type,currency\n{marker},XLON,STK,GBX\nCASH,X{account},STK,USD",
+            f"ticker,listing_exchange,security_type,currency\n{marker},XLON,STK,GBX\nPNL,ACCOUNT,POSITIONS,USD",
+            f"ticker,listing_exchange,security_type,currency\n{marker},XLON,STK,GBX\nPNL,ACCOUNT,STK,GBX",
+            f"ticker,listing_exchange\n{marker},XLON\nACCOUNT,BALANCE",
+            f"ticker,routing_exchange\n{marker},SMART\nPNL,{account}Y",
+            f"ticker\n{marker}\n=PRIVATEFORMULA()",
+        ]
+        for encoded in rows:
+            failed = self.observe(encoded.encode())
+            self.assertEqual(
+                (failed["state"], failed["entries"], failed["content_hash"]), ("rejected", [], None)
+            )
+            self.assertEqual(self.members(), before)
+            self.assertEqual(u.universe(self.conn)["sources"][0]["active_snapshot_id"], listing["id"])
+            diagnostics = json.dumps(failed).upper()
+            for private in (account, marker, "991700", "003381", "PRIVATEFORMULA"):
+                self.assertNotIn(private, diagnostics)
+                self.assertNotIn(private.encode(), self.conn.serialize().upper())
 
     def test_embedded_account_identifiers_do_not_enter_sql_or_diagnostics(self):
         self.observe(FULL)

@@ -121,20 +121,21 @@ _FIELDS_RX = {
     "currency": r"[A-Z]{3}",
 }
 _ACCOUNT = re.compile(r"(?:[UFD]|DU|DF|FA|I|FAM|UAM|UAF)[0-9]{4,}", re.IGNORECASE)
-_PRIVATE_LABELS = {
+# A single-column paste lacks an explicit schema. These first-line labels may
+# introduce a private report. A ticker column explicitly declares symbol data.
+_PRIVATE_REPORT_FIELDS = {
     "ACCOUNT",
     "ACCOUNTS",
     "ACCOUNTID",
     "BALANCE",
-    "CASH",
     "PASSWORD",
     "POSITIONS",
     "POSITION",
     "QUANTITY",
-    "PNL",
     "HOLDINGS",
     "PORTFOLIO",
 }
+_REPORT_COLUMNS = _PRIVATE_REPORT_FIELDS | {"CASH", "PNL"}
 
 
 def read_file(path):
@@ -170,10 +171,13 @@ def _project(fields):
             not original.isascii()
             or not re.fullmatch(_FIELDS_RX[field], value, re.ASCII)
             or _ACCOUNT.search(value)
-            or (value in _PRIVATE_LABELS and not (field in {"ticker", "security_type"} and value == "CASH"))
         ):
             raise ValueError("An instrument field contains an unsupported identifier.")
         entry[field] = value or None
+    # A report heading in a venue, currency or asset-type field cannot describe
+    # that metadata. The symbol field has its own grammar.
+    if any(entry[f] in _PRIVATE_REPORT_FIELDS for f in FIELDS if f != "ticker"):
+        raise ValueError("Embedded report header. Use instrument rows only.")
     if not entry["conid"] and not entry["ticker"]:
         raise ValueError("Each row needs an instrument symbol or contract ID.")
     if entry["ticker"] and entry["ticker"].isdigit() and not entry["listing_exchange"]:
@@ -196,6 +200,10 @@ def _parse(raw):
     try:
         first = next(reader)
         header = [cell.strip().lower() for cell in first]
+        if len(header) == 1 and header[0].upper() in _REPORT_COLUMNS:
+            raise ValueError(
+                "Ambiguous report header. For an instrument symbol, use a CSV with a ticker column."
+            )
         if len(first) > 1 or (len(header) == 1 and header[0] in FIELDS):
             if (
                 len(header) != len(set(header))
@@ -297,7 +305,7 @@ def _source(conn, source_id, mode, seq):
         not isinstance(source_id, str)
         or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", source_id)
         or _ACCOUNT.search(source_id)
-        or source_id.upper() in _PRIVATE_LABELS
+        or source_id.upper() in _REPORT_COLUMNS
     ):
         raise ValueError("Use a short local source ID such as personal.")
     if mode not in {"manual_snapshot", "file"}:
@@ -431,10 +439,6 @@ def _identity_plan(conn, source_id, entries):
         if old and values != entry:
             _instrument_id(conn, values, source_id)
         key = _key(values, source_id)
-        if values["ticker"] == "CASH" and not (
-            all(values[k] for k in LISTING) and values["security_type"] in {"STK", "ADR", "ETF"}
-        ):
-            raise ValueError("A label shared with account reports requires a fully specified stock listing.")
         listing = tuple(values[k] for k in LISTING)
         if all(listing) and values["security_type"] in {"STK", "ETF", "ADR"}:
             if listing in listings and listings[listing] != values["conid"]:

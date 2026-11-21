@@ -7,6 +7,7 @@ from . import evidence, gaps, providers
 from .db import is_fixture, now, uid, write
 from .research import authorized, encode, renew
 
+SEARCH_LIMIT = 24
 GAPS = {
     "historical_consensus": (
         "history_missing",
@@ -48,6 +49,7 @@ GAPS = {
 TOOLS = {
     "list_capabilities": "Inspect the research tools available to this assignment.",
     "search_evidence": "Read saved passages for this instrument and its information cutoff.",
+    "next_evidence_page": "Continue a scoped search at its frozen commit boundary using the previous page's next_cursor.",
     "get_evidence": "Read one exact passage and its provenance by id.",
     "compare_financials": "Compare two returned observations with explicit financial semantics.",
     "historical_consensus": "Check access to pre-release Street consensus.",
@@ -58,6 +60,7 @@ TOOLS = {
 PARAMETERS = {
     "list_capabilities": set(),
     "search_evidence": set(),
+    "next_evidence_page": {"cursor"},
     "get_evidence": {"id"},
     "compare_financials": {"current", "baseline", "kind"},
     "historical_consensus": set(),
@@ -104,11 +107,37 @@ class Bridge:
     def _perform(self, name, args):
         if name == "list_capabilities":
             return "ok", {"capabilities": self.catalog(), "providers": providers.capabilities()}, []
-        if name == "search_evidence":
-            found = evidence.search(
-                self.db, self.context["instrument"]["id"], self.context["cutoff"], fixture=self.fixture
-            )[:24]
-            return "ok" if found else "partial", {"passages": found}, [p["id"] for p in found]
+        if name in ("search_evidence", "next_evidence_page"):
+            if name == "next_evidence_page":
+                row = self.db.execute(
+                    "SELECT output FROM receipts WHERE id=? AND run_id=? AND tool IN ('search_evidence','next_evidence_page') AND status='ok'",
+                    (args["cursor"], self.lease.run_id),
+                ).fetchone()
+                prior = json.loads(row[0])["data"] if row else {}
+                if prior.get("next_cursor") != args["cursor"] or not prior.get("has_more"):
+                    raise ValueError("Cursor unavailable for this search and assignment.")
+                page, watermark = prior["page"] + 1, prior["evidence_commit_seq"]
+            else:
+                page = 1
+                watermark = self.db.execute("SELECT max(seq) FROM commits").fetchone()[0]
+            matches = evidence.search(
+                self.db,
+                self.context["instrument"]["id"],
+                self.context["cutoff"],
+                fixture=self.fixture,
+                commit_seq=watermark,
+                limit=SEARCH_LIMIT + 1,
+                offset=(page - 1) * SEARCH_LIMIT,
+            )
+            found = matches[:SEARCH_LIMIT]
+            data = {
+                "passages": found,
+                "limit": SEARCH_LIMIT,
+                "has_more": len(matches) > SEARCH_LIMIT,
+                "page": page,
+                "evidence_commit_seq": watermark,
+            }
+            return "ok" if found else "partial", data, [p["id"] for p in found]
         if name == "get_evidence":
             passage = self._passage(args["id"])
             return "ok", passage, [passage["id"]]
@@ -160,6 +189,8 @@ class Bridge:
             run = authorized(self.db, self.lease)
             if name == "record_gap":
                 data = gaps.missing_input(self.db, run["id"], args)
+            if name in ("search_evidence", "next_evidence_page"):
+                data["next_cursor"] = receipt if data["has_more"] else None
             gap = gaps.register(self.db, run, name, args, status, data, GAPS, seq)
             result = {
                 "status": status,
@@ -179,7 +210,7 @@ class Bridge:
                     receipt,
                     self.lease.run_id,
                     name,
-                    "1",
+                    "2" if name in ("search_evidence", "next_evidence_page") else "1",
                     encode(args),
                     started,
                     now(),
