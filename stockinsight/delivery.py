@@ -129,14 +129,17 @@ def _available(channel):
 
 
 def _claim(db, stamp, channel):
+    replay = is_fixture(db) and channel=="windows" and db.execute("SELECT replay_clock FROM assistant_profile").fetchone()[0] is not None
     can_send = (
-        not is_fixture(db)
+        (replay or not is_fixture(db))
         and _available(channel)
         and db.execute("SELECT enabled FROM delivery_settings").fetchone()[0]
     )
     due = """SELECT * FROM delivery_notices n WHERE (state='pending' OR (state='failed' AND
              (SELECT count(*) FROM delivery_attempts a WHERE a.notice_id=n.id)<6)) AND next_at<=?
              AND expires_at>? ORDER BY created_at,id LIMIT 1"""
+    if replay:
+        due = due.replace("ORDER BY created_at", "AND notice_key LIKE 'assistant:%' ORDER BY created_at")
     maintenance = db.execute(
         """SELECT 1 FROM delivery_attempts WHERE outcome='sending' AND deadline<=?
         UNION ALL SELECT 1 FROM delivery_notices WHERE state IN ('pending','failed','uncertain') AND expires_at<=? LIMIT 1""",
@@ -160,7 +163,7 @@ def _claim(db, stamp, channel):
             (stamp,),
         )
         if (
-            is_fixture(db)
+            (is_fixture(db) and not replay)
             or not _available(channel)
             or not db.execute("SELECT enabled FROM delivery_settings").fetchone()[0]
         ):

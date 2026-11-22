@@ -381,12 +381,14 @@ def tick(db, *, at=None, detail=False):
 
 def run_foreground(path, stop_event):
     """Run bounded source, investigation and notification operations on the foreground owner's connection."""
-    from . import agenda, delivery, memory, proactive, server_profile
+    from . import agenda, assistant, assistant_events, delivery, memory, proactive, server_profile
 
     with closing(connect(path)) as db:
         while not stop_event.is_set():
             busy = False
-            for task in (delivery.tick, tick, proactive.tick, memory.tick, agenda.tick):
+            tasks = (delivery.tick, assistant_events.tick) if assistant.profile(db)["replay_clock"] else (
+                delivery.tick, tick, proactive.tick, assistant_events.tick, memory.tick, agenda.tick)
+            for task in tasks:
                 if stop_event.is_set():
                     break
                 try:

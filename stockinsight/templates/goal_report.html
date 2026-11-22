@@ -2,6 +2,11 @@
 <p class="meta">{{ report.objective }} · Finished {{ report.ended_at }}</p><p>{{ report.body.summary }}</p>
 {% if report.reason %}<h2>Why this reached you</h2><p>{{ report.reason }}</p>{% endif %}
 {% if report.body.followthrough %}<p>Follow-up source check · {{ report.body.followthrough.status }}{% if report.body.followthrough.receipt_id %} · <code>{{ report.body.followthrough.receipt_id }}</code>{% endif %}</p>{% endif %}
+{% if assistant_history %}<h2>Assistant case history</h2>{% for b in assistant_history %}<section><p>{{ b.label }} · {{ b.cutoff }} · <code>{{ b.case_id }}</code></p><h3>{{ b.question }}</h3>
+<p>{{ b.summary }}</p><p>Conditional interpretation · {{ b.hypothesis }}</p><p>Alternative · {{ b.alternative }}</p>
+{% for c in b.citations %}<details><summary>{{ c.title }} · {{ c.locator }}</summary><blockquote>{{ c.text }}</blockquote><p>{% if c.source_url.startswith('https://') %}<a href="{{ c.source_url }}" rel="noreferrer">Original source</a>{% else %}Synthetic source{% endif %} · <code>{{ c.version_hash }}</code></p></details>{% endfor %}
+{% for c in b.calculations %}<p>{{ c.baseline_value }} → {{ c.current_value }} {{ c.unit }} ({{ c.percent_change }}%)</p>{% endfor %}
+{% for gap in b.gaps %}<p>{{ gap }}</p>{% endfor %}{% for n in b.next_observations %}<p>{{ n }}</p>{% endfor %}</section>{% endfor %}{% endif %}
 {% if method %}<h2>Evidence and interpretation</h2>
 {% for c in method.body.claims if c.text != report.body.summary %}<p>{{ c.text }}</p>{% endfor %}
 {% for e in report.body.exposures %}<p>Reviewed {{ e.relation | replace('_',' ') }} relationship for {{ e.ticker }} · {{ e.entity }}</p><blockquote>{{ e.quotation }}</blockquote><p>{{ e.reason }} · <a href="/exposures">Relationship evidence</a> · <code>{{ e.passage_id }}</code></p>{% endfor %}

@@ -1,6 +1,7 @@
 """Private foreground browser UI. Workers reach the application through Bridge only."""
 
 import hmac
+import json
 import secrets
 from base64 import b64encode
 from contextlib import asynccontextmanager, closing
@@ -13,7 +14,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse,
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from . import agenda, delivery, evidence, exposure, goals, journal, local_research, memory, methods, monitor, ownership, providers, research, sources_calendar, universe, workspace
+from . import assistant_mcp, agenda, delivery, evidence, exposure, goals, journal, local_research, memory, methods, monitor, ownership, providers, research, sources_calendar, universe, workspace
 from .db import connect, is_fixture, uid
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).with_name("templates"))
@@ -56,6 +57,8 @@ def application(path, port, login_code, *, request_stop=None):
     async def private(req, call_next):
         if req.headers.getlist("host") != [host]:
             return PlainTextResponse("Unrecognized host", status_code=403)
+        if req.url.path == "/mcp":
+            return await assistant_mcp.endpoint(req, path)
         if req.method not in ("GET", "POST"):
             return PlainTextResponse("Unsupported method", status_code=405)
         if req.method == "POST" and req.headers.getlist("origin") != [origin]:
@@ -161,7 +164,9 @@ def application(path, port, login_code, *, request_stop=None):
         with closing(connect(path)) as db:
             result = goals.report(db,report_id)
             method = methods.export(db,result["method_report"]) if result["method_report"] else None
-            return page(req,db,"goal_report",report=result,method=method)
+            link = db.execute("SELECT case_id FROM assistant_jobs WHERE dispatch_id=? LIMIT 1",(report_id,)).fetchone()
+            history = [json.loads(r[0]) for r in db.execute("SELECT result FROM assistant_jobs WHERE case_id=? AND state='accepted' ORDER BY rowid",(link[0],))] if link else []
+            return page(req,db,"goal_report",report=result,method=method,assistant_history=history)
 
     @app.get("/methods")
     def workbench(req: Request, instrument_id: str | None = None):
@@ -234,6 +239,7 @@ def application(path, port, login_code, *, request_stop=None):
                 db,
                 "status",
                 delivery=delivery.dashboard(db),
+                assistant_state=assistant_mcp.status(db),
                 can_stop=request_stop is not None,
                 providers=providers.capabilities(db),
                 states=db.execute("SELECT state,count(*) AS n FROM jobs GROUP BY state").fetchall(),

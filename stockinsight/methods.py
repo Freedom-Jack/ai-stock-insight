@@ -584,7 +584,8 @@ def event_report(
         fed_calendar = event["kind"] == "monetary_policy_meeting" and source["origin"] == "fed_calendar"
         if fed_calendar:
             title = f"Federal Reserve meeting · relevance to {listing['ticker']}"
-            summary = f"The Federal Reserve calendar lists the FOMC meeting as {event['state']}, {time}."
+            summary = (source["text"] if event["state"] == "occurred" else
+                       f"The Federal Reserve calendar lists the FOMC meeting as {event['state']}, {time}.")
         elif calendar:
             title = calendar["title"] + (f" · relevance to {listing['ticker']}" if not direct else "")
             summary = f"{calendar['title']} is {event['state']}, {time}."

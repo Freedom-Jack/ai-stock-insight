@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from . import (
+    assistant,
     delivery,
     exposure,
     goal_schedule,
@@ -201,11 +202,14 @@ def _discover(db, plan, stamp):
                         continue
                 if e["supersedes"]:
                     db.execute(
-                        """UPDATE goal_dispatch SET state='superseded',ended_at=? WHERE state IN ('ready','running')
+                        """UPDATE goal_dispatch SET state='superseded',ended_at=? WHERE state IN ('ready','running','awaiting_assistant')
                         AND decision_id IN (SELECT r.id FROM goal_relevance r JOIN event_versions v ON v.id=r.event_version_id
                         WHERE r.plan_id=? AND v.event_id=? AND v.id<>?)""",
                         (stamp, plan["id"], e["event_id"], e["id"]),
                     )
+                    db.execute("""UPDATE assistant_jobs SET state='superseded' WHERE state IN ('pending','running')
+                               AND event_id=? AND method_id IN (SELECT id FROM method_reports WHERE event_version_id<>?)""",
+                               (e["event_id"],e["id"]))
                 if decision in ("investigate", "prepare"):
                     _queue(
                         db,
@@ -437,6 +441,7 @@ def _claim(db, stamp):
                         work["id"],
                         work["attempts"] + 1,
                         stamp,
+                        "connected_assistant" if assistant.profile(db)["enabled"] else
                         "fixture" if is_fixture(db) else "on_device" if local_model.available() else "local",
                     ),
                 )
@@ -590,7 +595,7 @@ def _notify(db, work, finished):
         else delivery.enqueue(
             db,
             key="goal:" + work["id"],
-            title="Stock Insight research update",
+            title=(assistant.profile(db)["label"]+" · research update") if assistant.profile(db)["replay_clock"] else "Stock Insight research update",
             message="A research report is ready in your private desk.",
             report_path="/goals/reports/" + work["id"],
             at=finished,
@@ -611,6 +616,9 @@ def tick(db, *, at=None):
     if not work:
         return None
     try:
+        if work["decision_id"] and assistant.profile(db)["enabled"]:
+            assistant.enqueue(db, work, stamp)
+            return work["id"]
         body, method_id, runtime, prior = _run(db, work, stamp)
     except (ValueError, OSError) as exc:
         with write(db):

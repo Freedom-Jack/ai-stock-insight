@@ -149,10 +149,11 @@ def show(path, attempt, port):
             root.resizable(False, False)
             frame = ttk.Frame(root, padding=(18, 14))
             frame.pack(fill="both", expand=True)
+            labeled = notice["notice_key"].startswith("assistant:") and notice["title"].startswith(("Historical replay ·","Live integration test"))
             ttk.Label(
-                frame, text=delivery.GENERIC_TITLE, font=("Segoe UI", 13, "bold")
+                frame, text=notice["title"] if labeled else delivery.GENERIC_TITLE, font=("Segoe UI", 13, "bold")
             ).pack(anchor="w")
-            ttk.Label(frame, text=delivery.GENERIC_MESSAGE, font=("Segoe UI", 10)).pack(
+            ttk.Label(frame, text=notice["message"] if labeled else delivery.GENERIC_MESSAGE, wraplength=415 if labeled else 0, font=("Segoe UI", 10)).pack(
                 anchor="w", pady=(4, 12)
             )
             buttons = ttk.Frame(frame)
