@@ -1,8 +1,27 @@
 # Stock Insight implementation record
 
+## Handoff for the next implementation chat
+
+The Windows personal trial is ready to use. Resume in `E:\OpenAI\ChatGPTDesktop\worktrees\2541\ai-stock-insight` on `codex/stock-insight-i1-i2`. The tested implementation is `092886660f8d8569b1629030268f86d5e96c19a1` (schema 9). Commit `bc12897dca32e7321ce53aad0dcc4160191fca6c` recorded its acceptance evidence. This handoff adds documentation only. [Development branch on GitHub](https://github.com/Freedom-Jack/ai-stock-insight/tree/codex/stock-insight-i1-i2)
+
+**Start on this computer.** Run the launcher from PowerShell:
+
+```powershell
+Set-Location 'E:\OpenAI\ChatGPTDesktop\worktrees\2541\ai-stock-insight'
+.\Start-StockInsight.cmd
+```
+
+Open `http://127.0.0.1:8765/today` and sign in as `research` with the password printed in the terminal. Add qualified listings under **Companies & themes**, then adopt a standing goal in **Goals**. The terminal must stay open for monitoring. You can close the browser. Stop with **Ctrl+C** and restart with the same launcher. Personal data lives in `%LOCALAPPDATA%\StockInsight\personal`. Use `.\Start-StockInsight.cmd --demo` for the separate synthetic workspace. [Startup, backup and restore](windows-trial.md)
+
+**Verified baseline.** On the tested commit, a saved goal triggered public-source checks, local Qwen research, a cited report and a native notification observed on the Windows desktop with Edge closed. A later investigation retrieved two saved follow-ups. Explicit review survived restart. The release ledger below identifies the actual source and delivery receipts, 245 passing suite tests, and the subsequent 34 passing targeted checks. Publication relied on that verification.
+
+**Coverage and continuation.** Automatic issuer coverage centers on qualified NVIDIA and Microsoft listings. Closing-price analysis accepts operator-supplied data. A live market feed and licensed historical consensus remain unavailable. SEC access requires an authorized identifying contact, and the local BLS request returned HTTP 403. Local monitoring requires an awake computer and an interactive session for desktop delivery. The next product input is feedback from ordinary trial use. Continuous server commissioning still requires an authorized host, private notification route, independent observer and off-host backup destination. [Commissioning guide](server-commissioning.md)
+
+**Preserve the local worktree.** The user's change to `examples/stockinsight/watchlist.csv` is unstaged. The supplied `docs/implementation-review.md` and `docs/implementation-rereview.md` are untracked and available in this worktree. Leave all three in place. The branch contains the committed example watchlist, source, fixtures, and shareable verification summaries. Personal databases, model assets, screenshots, backups and disposable verification workspaces stay local. Start the next chat by checking `git status --short --branch` and `git rev-parse HEAD`.
+
 ## Windows proactive release
 
-**Local release code:** `092886660f8d8569b1629030268f86d5e96c19a1`, branch `codex/stock-insight-i1-i2`, schema 9. Start with `.\Start-StockInsight.cmd`, open `http://127.0.0.1:8765/today`, add an instrument-only watchlist and adopt a standing goal. The user can close the browser and return for notified reports, follow-up and review. No server was commissioned, brokerage connected, billing changed or code pushed. [Windows operator guide](windows-trial.md) · [Single-server commissioning](server-commissioning.md)
+**Local release code:** `092886660f8d8569b1629030268f86d5e96c19a1`, branch `codex/stock-insight-i1-i2`, schema 9. The release verification used local inference, public sources and an isolated Windows workspace. Server commissioning remains pending. [Windows operator guide](windows-trial.md) · [Single-server commissioning](server-commissioning.md)
 
 ### Delivery and acceptance ledger
 
