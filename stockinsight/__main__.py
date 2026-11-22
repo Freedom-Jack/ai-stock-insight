@@ -13,7 +13,7 @@ from pathlib import Path
 from . import evidence, executor, local_research, providers, research, universe, workspace
 from .db import connect, is_fixture
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples/stockinsight/watchlist.csv"
+EXAMPLE = Path(__file__).with_name("fixtures") / "training-list.csv"
 DEMO_QUESTION = "NVIDIA has fallen. Does the available evidence support buying after the release?"
 DEMO_CUTOFF = "2024-08-29T12:00:00Z"
 

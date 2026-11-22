@@ -111,7 +111,7 @@ def main():
             page.goto(origin + "/today")
             page.get_by_role("link", name="Set up companies & themes").click()
             page.locator("[name=entries]").fill(
-                (REPO / "examples/stockinsight/watchlist.csv").read_text()
+                (REPO / "stockinsight/fixtures/training-list.csv").read_text()
             )
             page.locator("[name=complete]").check()
             page.get_by_role("button", name="Import snapshot").click()

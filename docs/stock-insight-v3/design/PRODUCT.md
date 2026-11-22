@@ -4,6 +4,8 @@ Status: accepted implementation direction. Version 3.1, 20 November 2026.
 
 ## 1. Purpose
 
+A saved high-level goal starts regular discovery, event preparation and watchlist-scoped investigations. An external notification brings consequential findings to the user while the site is closed. The website holds cited reports, follow-up, review and execution status. Daily visits and per-investigation source selection are unnecessary.
+
 Stock Insight is a personal research desk with initiative. It helps Jack notice consequential events, understand how they connect to companies, examine claims with appropriate tools, preserve what he has learned, and return to unresolved questions without needing him to invent an expert process each time.
 
 The user should be able to say “Keep me prepared for important developments affecting these companies” or “NVIDIA has fallen; is buying now supported by the evidence?” The system translates that goal into appropriate research, uses available data and explains its conclusion. It may challenge the question's premise, suggest a better comparison or identify missing information. It should not ask the user to prescribe every source or step.

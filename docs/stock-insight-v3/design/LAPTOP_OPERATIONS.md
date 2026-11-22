@@ -14,7 +14,7 @@ Both profiles support the same research capabilities and preserve the same SQL r
 | Launch | Foreground application and worker in WSL2 | Linux service supervisor with automatic startup/restart |
 | Availability | While processes, laptop, network and authentication are available | Always-on host with observed failures and recovery; no claim of perfect availability |
 | Storage | User-writable Linux data directory | Persistent local server volume |
-| Reading/delivery | Private loopback UI and durable inbox | Same UI/inbox plus a configured notification route |
+| Reading/delivery | Private loopback UI, durable inbox and verified external delivery | Same UI/inbox plus a configured notification route |
 | Health | Status view, foreground logs and recovery on restart | Independent external health observation and outage notification |
 | Backups | Consistent local snapshots; configurable off-device copies | Scheduled verified snapshots and confirmed off-host copies |
 
@@ -30,7 +30,7 @@ Use a configurable user-writable data directory, for example an expanded `~/.loc
 
 Bind the UI/API to configurable loopback, initially `http://127.0.0.1:8765`, with MCP at `/mcp`. Windows browsers can reach WSL web applications through localhost under supported configurations. Verify the actual route; do not silently bind all interfaces to solve a failure. Mirrored networking and a public tunnel are not prerequisites. [2]
 
-The durable inbox is sufficient for local trial. Windows autostart, a companion watchdog and native toast notifications are optional conveniences, not implementation or acceptance blockers. Leave sleep, lid, wake-timer and battery policies unchanged. Closing the application or sleeping the laptop pauses local work; recovery must make that absence visible.
+The durable inbox retains reports. The local release also requires a working external notification route, verified while the browser is closed. Windows native delivery is an acceptable first route. Autostart and a companion watchdog remain optional. Leave sleep, lid, wake-timer and battery policies unchanged. Closing the application or sleeping the laptop pauses local work; recovery must make that absence visible.
 
 ## 3 Planned server operation
 

@@ -1,5 +1,13 @@
 # Stock Insight implementation record
 
+## Proactive local release in progress
+
+The active scope is local I3–I6 delivery and a prepared single-server profile. Development resumed on `codex/stock-insight-i1-i2` at `eb0a5892f689592ce09ec17282d967ed28732917`. The operator's modified example watchlist and both untracked independent reviews were present at inspection. The working model, pinned runtime and existing trial database contracts were present.
+
+The pre-change Windows regression run executed 183 tests. One failed because a fixture used the operator-editable example list and expected two rows. The demo and verification now use a dedicated two-listing training resource. The product, research workflow, laptop operation and acceptance contracts require an adopted standing goal to yield proactive investigation and a verified external notification while the browser is closed.
+
+Work in progress covers goal schedules, relevance, autonomous dispatch, dated source/calendar intake, sourced event and financial methods, continuity, case portability and external delivery. Verification must distinguish a source check, frozen report, OS delivery and user review. Server commissioning requires an authorized host.
+
 ## Windows personal trial
 
 The owner replaced the prior review stop with a local Windows delivery milestone. The trial builds on the committed second repair, `f081d9b`, and its continuation record, `4d5ab5e`, in the same worktree on `codex/stock-insight-i1-i2`. The two independent review documents remain supplied, untracked files. Earlier sections below preserve their original acceptance decisions. [Windows operator guide](windows-trial.md) · [Actual model, installation and account preflight](trial-executor.md)

@@ -6,7 +6,7 @@ Status: implementation plan for the complete personal release. Read [START_HERE]
 
 Build in integrated increments that are useful during construction. The release goal remains all seven product capabilities: anticipation, monitoring, investigation, continuity, guided methods, decision review and execution visibility. Tests verify the growing implementation; they are not a separate narrow market-validation project or a reason to keep only one function.
 
-Implement one executor, one selected financial provider, the public-source backbone and one private UI. Use `local_trial` for foreground laptop testing and prepare `server_single_node` for continuous operation of the same application. Windows autostart/toasts/companion are optional; they must not delay useful local use. A provider's absent dataset is a visible capability gap; it must not cause a placeholder value or block unrelated product work. Additional vendors and modeling depth follow observed need. For coding-agent model/effort, use [the development profile](MODEL_AND_EFFORT.md).
+Implement one executor, one selected financial provider, the public-source backbone and one private UI. Use `local_trial` for foreground laptop testing and prepare `server_single_node` for continuous operation of the same application. Verify one external notification route during local delivery. Windows autostart and a companion remain optional. A provider's absent dataset is a visible capability gap; it must not cause a placeholder value or block unrelated product work. Additional vendors and modeling depth follow observed need. For coding-agent model/effort, use [the development profile](MODEL_AND_EFFORT.md).
 
 ## 2. Inspect and preserve the existing repository
 

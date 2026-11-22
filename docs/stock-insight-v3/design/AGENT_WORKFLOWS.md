@@ -4,6 +4,8 @@ Status: normative behavior, with room for the agent to choose relevant steps. Th
 
 ## 1. Professional autonomy
 
+On accepting a standing goal, select permitted source checks, record expected deadlines, assess each observed development for relevance, and investigate material changes. Save the cited result and future observation before queuing delivery. Record quiet coverage, suppression and failures. Retry notification independently of research and preserve explicit user review.
+
 The investigator receives an objective, relevant history, time horizon/cutoff, permitted tools and a budget. It decides which sources and calculations are useful, follows material surprises, and stops when additional work is unlikely to change the answer within that budget. It may challenge the premise and propose a better question.
 
 Every method specifies: purpose, applicability, material inputs, acceptable fallbacks, output obligations, stop conditions and reopening triggers. The application checks outcomes and evidence, not whether the agent reproduced an identical hidden reasoning trace. Avoid both a vague “be a financial expert” prompt and a brittle universal checklist.

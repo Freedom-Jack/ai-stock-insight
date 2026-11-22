@@ -104,6 +104,8 @@ Retry a claim, race another claimant, expire/reassign a lease and submit an olde
 
 ### A15 Research versus notification outcomes
 
+For the local release, exercise a real adopted goal through discovery or preparation, research, relevance, an external notification and a retrievable follow-up. Close the browser before dispatch and verify the notice in the actual user-facing channel. Record the available delivery evidence and whatever remains unknown about human receipt. Exercise channel failure, retry and deduplication with the same frozen report.
+
 Commit a brief, then fail the configured notification channel. The inbox and research remain complete; retry delivery without repeating research. Duplicate acknowledgments have one effect. Expired notices retain their history. Provider acceptance, confirmed delivery when observable, opening and explicit review remain distinct.
 
 **Evidence:** Brief ID, separate outboxes and delivery attempts.
@@ -134,4 +136,4 @@ Restore a consistent backup to an isolated location; verify SQL integrity, refer
 
 ## Release decision
 
-Local-trial readiness requires the applicable local scenarios and all seven capabilities connected; optional Windows convenience features are not a gate. Planned server software/configuration can be delivered before a host is chosen, but claiming 24/7 commissioning requires the server portions of A16/A18/A19 and configured health/notification/backup evidence. Optional financial providers may remain disabled with explicit gaps. Unresolved integrity, privacy, authorization or false-completion defects block live release; limited data depth does not if useful supported behavior and its limitations are demonstrated. Do not equate acceptance with proven investment returns.
+Local-trial readiness requires the applicable local scenarios and all seven capabilities connected; one verified external delivery route is required. Windows autostart remains optional. Planned server software/configuration can be delivered before a host is chosen, but claiming 24/7 commissioning requires the server portions of A16/A18/A19 and configured health/notification/backup evidence. Optional financial providers may remain disabled with explicit gaps. Unresolved integrity, privacy, authorization or false-completion defects block live release; limited data depth does not if useful supported behavior and its limitations are demonstrated. Do not equate acceptance with proven investment returns.

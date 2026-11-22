@@ -14,7 +14,7 @@ from stockinsight import db, evidence, executor, research, universe, workspace
 from stockinsight.bridge import Bridge
 
 
-SAMPLE = Path(__file__).resolve().parents[1] / "examples/stockinsight/watchlist.csv"
+from stockinsight.__main__ import EXAMPLE as SAMPLE
 QUESTION = "NVIDIA has fallen. What do the reported results support, and should I buy?"
 CUTOFF = "2024-08-28T20:30:00Z"
 
