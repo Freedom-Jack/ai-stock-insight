@@ -169,8 +169,13 @@ def _end(db, plan_id, stamp):
         (stamp, stamp, plan_id),
     )
     db.execute(
-        "UPDATE goal_dispatch SET state='cancelled',ended_at=? WHERE plan_id=? AND state IN ('ready','running')",
+        "UPDATE goal_dispatch SET state='cancelled',ended_at=? WHERE plan_id=? AND state IN ('ready','running','awaiting_assistant')",
         (stamp, plan_id),
+    )
+    db.execute(
+        """UPDATE assistant_jobs SET state='cancelled' WHERE state IN ('pending','running')
+           AND dispatch_id IN (SELECT id FROM goal_dispatch WHERE plan_id=?)""",
+        (plan_id,),
     )
     return plan
 

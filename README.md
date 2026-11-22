@@ -12,6 +12,27 @@ Open **http://127.0.0.1:8765/today**. Sign in as `research` with the password pr
 
 Use **Ctrl+C** in the terminal or **Status → Stop this desk** to stop. The same command reopens your saved research and schedules. For the isolated synthetic demo run `.\Start-StockInsight.cmd --demo` (port 8766). [First use, access, updates, backup and restore](docs/windows-trial.md)
 
+## Open the historical company investigation
+
+This checkout contains a saved, isolated NVIDIA replay with its initial report and a later question about supply commitments. From the project directory, run
+
+```powershell
+.\.venv\Scripts\python.exe -m stockinsight --fixture --data-dir .stockinsight\tmp\next-stage-company serve --port 8766
+```
+
+Sign in as `research` with the password printed by the process. The case shows the two reported revenue cells, the comparison, the subsequent filing and the remaining gaps. The saved workspace lives on the handoff computer. A new checkout can reproduce the exercise with the replay commands below. [Open the saved case on this computer](http://127.0.0.1:8766/goals/reports/dispatch_e1663e76f83c2662daa04f22)
+
+Run any one line to advance the corresponding replay by one step. Run it again after the pending assistant job is accepted. Each scenario creates its own workspace under `.stockinsight/replays`. The live check requires a fresh directory and access to the public Federal Reserve calendar.
+
+```powershell
+.\.venv\Scripts\python.exe -m stockinsight.replay policy
+.\.venv\Scripts\python.exe -m stockinsight.replay company
+.\.venv\Scripts\python.exe -m stockinsight.replay noise
+.\.venv\Scripts\python.exe -m stockinsight.replay live
+```
+
+The private assistant connector uses an outbound Secure MCP Tunnel. This workstation has completed supervised desktop research and native Windows delivery. Work Cloud/dot subscription and visible delivery await private account authorization. The implementation record includes the verified receipts, connection procedure and billing limits. [Replay and assistant handoff](docs/implementation-status.md#historical-replay-and-private-assistant-handoff)
+
 ## Run the standalone fixture exercise
 
 From this checkout, install the locked dependencies and run the offline investigation. These commands use the Python 3.14 runtime tested on Windows.

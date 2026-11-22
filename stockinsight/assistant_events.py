@@ -161,10 +161,18 @@ def subscription(db, params, *, remove=False):
 
 
 def tick(db):
-    if not db.execute("SELECT 1 FROM assistant_subscriptions WHERE expires>?", (now(),)).fetchone():
-        return
-    stamp = now()
     from . import assistant
+
+    recovered = assistant.recover(db)
+    if not db.execute(
+        """SELECT 1 FROM assistant_jobs j JOIN assistant_subscriptions s ON s.expires>?
+                      LEFT JOIN assistant_events e ON e.job_id=j.id AND e.sub_id=s.id
+                      WHERE j.state='pending' AND (e.job_id IS NULL OR (e.state IN ('sending','pending')
+                      AND e.next_at<=?)) LIMIT 1""",
+        (now(), now()),
+    ).fetchone():
+        return recovered
+    stamp = now()
 
     with write(db):
         db.execute(
@@ -195,7 +203,11 @@ def tick(db):
             "UPDATE assistant_events SET state='sending',attempts=attempts+1,next_at=? WHERE job_id=? AND sub_id=?",
             (_after(60), row["job_id"], row["sub_id"]),
         )
-    ident = row["job_id"]
+    job_id = row["job_id"]
+    generation = db.execute(
+        "SELECT count(*) FROM assistant_interruptions WHERE job_id=?", (job_id,)
+    ).fetchone()[0]
+    ident = job_id if not generation else f"{job_id}.{generation}"
     try:
         stored = json.loads(_protect(row["destination"], decrypt=True))
         keys = [stored["key"]]
@@ -211,7 +223,7 @@ def tick(db):
                 "name": EVENT,
                 "timestamp": row["created_at"],
                 "cursor": None,
-                "data": {"job_id": ident, "case_id": row["case_id"], "label": row["label"]},
+                "data": {"job_id": job_id, "case_id": row["case_id"], "label": row["label"]},
             },
         )
         state = "accepted"
@@ -225,7 +237,7 @@ def tick(db):
                 state,
                 now() if state == "accepted" else None,
                 _after(min(3600, 30 * 2 ** row["attempts"])),
-                ident,
+                job_id,
                 row["sub_id"],
                 row["attempts"] + 1,
             ),

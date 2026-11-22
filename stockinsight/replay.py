@@ -13,7 +13,6 @@ FED = "https://www.federalreserve.gov/newsevents/pressreleases/monetary"
 SEC = "https://www.sec.gov/Archives/edgar/data/1045810/"
 RELEASE = SEC + "000104581024000262/q2fy25pr.htm"
 FILING = SEC + "000104581024000264/nvda-20240728.htm"
-FEED = "https://" + issuer_news.HOST + issuer_news.PATH
 STEPS = {
     "policy": [
         ("2024-09-12T15:00:00Z", "calendar"),

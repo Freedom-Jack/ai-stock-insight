@@ -77,6 +77,7 @@ def migrations():
         goals.LINKED_EVENTS,
         goals.SHARED_DELIVERY,
         assistant.SCHEMA,
+        assistant.RECOVERY,
     ]
 
 

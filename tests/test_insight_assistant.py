@@ -118,6 +118,76 @@ class AssistantStage(unittest.TestCase):
         self.assertIn("reduced", self.submit(conn, later, [outcome])["summary"])
         self.assertEqual([r[0] for r in conn.execute("SELECT DISTINCT case_id FROM assistant_jobs")], [job])
 
+    def test_real_http_keeps_browser_and_research_credentials_separate(self):
+        import http.client
+        from stockinsight.web import application
+        from tests.test_insight_web import served
+
+        self.start("company")
+        path = self.folder / "research.sqlite3"
+        key = secrets.token_hex(24)
+        payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+        with (
+            patch.object(assistant_mcp, "token", return_value=key),
+            served(lambda port: application(path, port, "desk-password")) as port,
+        ):
+
+            def post(headers, route="/mcp"):
+                with closing(http.client.HTTPConnection("127.0.0.1", port, timeout=5)) as conn:
+                    conn.request("POST", route, payload, {"Content-Type": "application/json", **headers})
+                    reply = conn.getresponse()
+                    return reply.status, reply.read()
+
+            self.assertEqual(post({})[0], 403)
+            self.assertEqual(post({"Authorization": "Basic ZGVtbw=="})[0], 403)
+            self.assertEqual(
+                post({"Origin": "http://127.0.0.1:" + str(port), "X-StockInsight-Key": key})[0], 403
+            )
+            status, body = post({"X-StockInsight-Key": key})
+            self.assertEqual(status, 200)
+            tools = {r["name"] for r in json.loads(body)["result"]["tools"]}
+            self.assertEqual(tools, set(assistant_mcp.TOOLS))
+            self.assertEqual(post({"X-StockInsight-Key": key}, "/actions/stop")[0], 403)
+
+    def test_stale_claim_and_retired_goal_cannot_commit_or_deliver(self):
+        conn = self.start("noise")
+        replay.advance(conn, "noise")
+        first = replay.advance(conn, "noise")["jobs"][0]["id"]
+        original = self.start_job(conn, first)
+        replay.ingest(
+            conn,
+            goals.listings(conn, "watchlist")[0],
+            "clarification",
+            db.instant(replay.STEPS["noise"][-1][0]),
+        )
+        with self.assertRaises(ValueError):
+            self.submit(conn, first, [original])
+        plan = goals.active(conn)[0]
+        goals.action(conn, "goal-stop", {"plan": plan["id"]})
+        self.assertEqual(
+            conn.execute("SELECT state FROM assistant_jobs WHERE id=?", (first,)).fetchone()[0], "cancelled"
+        )
+        self.assertFalse(conn.execute("SELECT 1 FROM delivery_notices").fetchone())
+
+    def test_interrupted_worker_is_fenced_and_reissued_within_bound(self):
+        conn = self.start("company")
+        job = replay.advance(conn, "company")["jobs"][0]["id"]
+        for attempt in range(1, 4):
+            ref = self.start_job(conn, job)
+            conn.execute("UPDATE assistant_jobs SET lease_until='2000-01-01T00:00:00Z' WHERE id=?", (job,))
+            self.assertEqual(assistant.recover(conn), job)
+            with self.assertRaises(ValueError):
+                self.submit(conn, job, [ref])
+            self.assertEqual(
+                conn.execute("SELECT state FROM assistant_jobs WHERE id=?", (job,)).fetchone()[0],
+                "pending" if attempt < 3 else "failed",
+            )
+        self.assertEqual(
+            conn.execute("SELECT count(*) FROM assistant_interruptions WHERE job_id=?", (job,)).fetchone()[0],
+            3,
+        )
+        self.assertFalse(conn.execute("SELECT 1 FROM delivery_notices").fetchone())
+
     def test_workspace_guard_precedes_migration(self):
         self.folder.mkdir()
         path = self.folder / "research.sqlite3"

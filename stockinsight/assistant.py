@@ -29,6 +29,13 @@ CREATE TABLE assistant_subscriptions(id TEXT PRIMARY KEY, destination BLOB NOT N
 CREATE TABLE assistant_events(job_id TEXT NOT NULL REFERENCES assistant_jobs, sub_id TEXT NOT NULL REFERENCES assistant_subscriptions,
  state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at TEXT NOT NULL, accepted_at TEXT, PRIMARY KEY(job_id,sub_id));
 """
+RECOVERY = """
+CREATE TABLE assistant_interruptions(
+ job_id TEXT NOT NULL REFERENCES assistant_jobs, attempt INTEGER NOT NULL, expired_at TEXT NOT NULL,
+ event_receipts TEXT NOT NULL, PRIMARY KEY(job_id,attempt)
+);
+"""
+
 PUBLIC = {
     "issuer",
     "issuer_news",
@@ -174,9 +181,50 @@ def follow_up(db, case_id, question, request_key):
         return {"job_id": ident, "case_id": case_id}
 
 
+def recover(db, job_id=None):
+    """Fence an expired assistant and retain its delivery receipts before redispatch."""
+    stamp = now()
+    row = db.execute(
+        """SELECT id FROM assistant_jobs WHERE state='running' AND lease_until<=?
+                     AND (? IS NULL OR id=?) ORDER BY lease_until LIMIT 1""",
+        (stamp, job_id, job_id),
+    ).fetchone()
+    if not row:
+        return
+    with write(db):
+        job = db.execute(
+            "SELECT * FROM assistant_jobs WHERE id=? AND state='running' AND lease_until<=?", (row[0], stamp)
+        ).fetchone()
+        if not job:
+            return
+        attempt = db.execute(
+            "SELECT count(*)+1 FROM assistant_interruptions WHERE job_id=?", (job["id"],)
+        ).fetchone()[0]
+        receipts = [
+            dict(r) for r in db.execute("SELECT * FROM assistant_events WHERE job_id=?", (job["id"],))
+        ]
+        db.execute(
+            "INSERT INTO assistant_interruptions VALUES(?,?,?,?)",
+            (job["id"], attempt, stamp, json.dumps(receipts)),
+        )
+        db.execute("DELETE FROM assistant_events WHERE job_id=?", (job["id"],))
+        state = "pending" if attempt < 3 else "failed"
+        db.execute(
+            "UPDATE assistant_jobs SET state=?,owner=NULL,lease_until=NULL WHERE id=?", (state, job["id"])
+        )
+        if state == "failed" and job["dispatch_id"] == job["id"]:
+            db.execute(
+                """UPDATE goal_dispatch SET state='failed',detail='Assistant lease expired three times'
+                       WHERE id=? AND state='awaiting_assistant'""",
+                (job["id"],),
+            )
+    return job["id"]
+
+
 def claim(db, job_id, worker_key):
     if not isinstance(worker_key, str) or not 16 <= len(worker_key) <= 160:
         raise ValueError("Supply a random per-investigation worker key.")
+    recover(db, job_id)
     with write(db):
         row = _item(db, job_id)
         stamp = now()

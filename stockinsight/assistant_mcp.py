@@ -6,6 +6,9 @@ import json
 import os
 import secrets
 import sqlite3
+import shutil
+import re
+import http.client
 import subprocess
 from contextlib import closing
 from pathlib import Path
@@ -52,6 +55,7 @@ def health(db):
             "SELECT provider,status,finished_at FROM source_checks ORDER BY rowid DESC LIMIT 12"
         )
     ]
+    result["interrupted_attempts"] = db.execute("SELECT count(*) FROM assistant_interruptions").fetchone()[0]
     result["pending"] = []
     for row in db.execute(
         "SELECT id,case_id FROM assistant_jobs WHERE state IN ('pending','running') ORDER BY rowid LIMIT 40"
@@ -248,12 +252,17 @@ async def endpoint(req, path):
         reply = {"error": {"code": -32601, "message": "Unknown method"}}
     except (ValueError, TypeError, OSError, sqlite3.Error):
         callback = isinstance(msg, dict) and msg.get("method") == "events/subscribe"
-        reply = {
-            "error": {
-                "code": -32015 if callback else -32602,
-                "message": "Callback verification failed" if callback else "Invalid request",
+        reply = (
+            {
+                "error": {
+                    "code": -32015,
+                    "message": "Callback verification failed",
+                    "data": {"reason": "challenge_failed"},
+                }
             }
-        }
+            if callback
+            else {"error": {"code": -32602, "message": "Invalid request"}}
+        )
     return JSONResponse({"jsonrpc": "2.0", "id": ident, **reply}, headers={"Cache-Control": "no-store"})
 
 
@@ -261,8 +270,8 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("action", choices=("prepare", "enable", "status", "tunnel"))
     p.add_argument("--directory", type=Path, required=True)
-    p.add_argument("--client", default="tunnel-client")
-    p.add_argument("--profile", default="stock-insight")
+    p.add_argument("--client", help="Installed official tunnel-client executable")
+    p.add_argument("--port", type=int, default=8765, help="Port of this running loopback desk")
     args = p.parse_args(argv)
     path = backup._local_path(args.directory / "research.sqlite3")
     if not path.is_file():
@@ -311,16 +320,65 @@ def show_status(path):
 
 def tunnel(path, args, p):
     key = token(path)
-    if not key or not os.environ.get("CONTROL_PLANE_API_KEY"):
-        p.error("Provide the authorized tunnel runtime credential locally and enable this workspace first.")
+    tunnel_id = os.environ.get("CONTROL_PLANE_TUNNEL_ID", "")
+    if (
+        not key
+        or not os.environ.get("CONTROL_PLANE_API_KEY")
+        or not re.fullmatch(r"tunnel_[A-Za-z0-9_-]{8,128}", tunnel_id)
+    ):
+        p.error("Prepare this workspace and supply its authorized tunnel ID and runtime credential locally.")
+    if not 1024 <= args.port <= 65535:
+        p.error("Choose this desk's loopback port.")
+    local = (
+        Path(__file__).resolve().parents[1] / ".stockinsight/tools/tunnel-client-v0.0.21/tunnel-client.exe"
+    )
+    client = args.client or (str(local) if local.is_file() else shutil.which("tunnel-client"))
+    if not client:
+        p.error("Install the official tunnel client or supply --client.")
+    # Verify desk identity before opening the outbound transport.
+    conn = http.client.HTTPConnection("127.0.0.1", args.port, timeout=3)
+    try:
+        conn.request(
+            "POST",
+            "/mcp",
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+            {"Content-Type": "application/json", "X-StockInsight-Key": key},
+        )
+        reply = conn.getresponse()
+        if (
+            reply.status != 200
+            or json.loads(reply.read(12000)).get("result", {}).get("serverInfo", {}).get("name")
+            != "Stock Insight"
+        ):
+            p.error("The selected desk is not serving its authenticated MCP endpoint on that port.")
+    finally:
+        conn.close()
     env = {
-        **os.environ,
+        **{
+            n: v
+            for n, v in os.environ.items()
+            if not n.startswith(
+                ("MCP_", "TUNNEL_CLIENT_", "CONTROL_PLANE_", "CLOUDFLARED_", "OPENAI_", "STOCKINSIGHT_")
+            )
+        },
+        "CONTROL_PLANE_API_KEY": os.environ["CONTROL_PLANE_API_KEY"],
         "STOCKINSIGHT_TUNNEL_AUTH": key,
         "MCP_EXTRA_HEADERS": "X-StockInsight-Key: env:STOCKINSIGHT_TUNNEL_AUTH",
         "MCP_DISCOVERY_EXTRA_HEADERS": "X-StockInsight-Key: env:STOCKINSIGHT_TUNNEL_AUTH",
         "MCP_OAUTH_DISCOVERY": "disabled",
     }
-    return subprocess.call([args.client, "run", "--profile", args.profile], env=env)
+    return subprocess.call(
+        [
+            client,
+            "run",
+            "--control-plane.tunnel-id",
+            tunnel_id,
+            "--mcp.server-url",
+            f"http://127.0.0.1:{args.port}/mcp",
+            "--mcp.oauth-discovery=disabled",
+        ],
+        env=env,
+    )
 
 
 if __name__ == "__main__":
