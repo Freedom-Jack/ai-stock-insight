@@ -80,13 +80,13 @@ Allow autonomous public-source retrieval, deterministic calculations, draft inte
 
 ## 7. Availability and attention
 
-The laptop is the initial development/testing and trial environment. Use a foreground application with a durable inbox; automatic startup and desktop integration are optional conveniences. The planned `server_single_node` profile provides continuous operation on one supervised Linux host using the same application and data contracts. Continuous operation remains subject to actual source, provider, network and host availability.
+The laptop is the initial development, testing and trial environment. Use a foreground application with a durable inbox and a verified notification route that reaches the user with the browser closed. Automatic startup is optional. The planned `server_single_node` profile uses one supervised Linux host and the same application and data contracts. Continuous operation depends on source, provider, network and host availability.
 
 The laptop trial checks while the machine is awake and the application is running with usable network/authentication. It must show its actual active periods. If the machine sleeps across a deadline, preserve the missed deadline and recover useful work after resume. A late reconstruction must not look like an on-time check. Server deployment removes dependence on laptop sleep; it does not guarantee an always-current broker session or watchlist snapshot.
 
 A quiet report states the enabled sources checked and any gaps. “Nothing important found” is an analytical conclusion; “all required sources checked successfully” is an operational claim that needs receipts. An unavailable source cannot be hidden by a fluent summary from another source.
 
-Default trial notification is the durable Today inbox, with optional local desktop notification while awake. The continuous server profile includes an explicitly configured off-device notification route and independent health observation. An urgent verified source fact can appear before a longer investigation. A provider-accepted notification is not proof the user read it. This specification does not authorize sending messages or purchasing/deploying a server now.
+The Windows trial delivers a native notification while the computer is awake and the user session is interactive. The Today inbox retains reports for later reading and explicit review. The continuous server profile requires a configured off-device route and independent health observation. An urgent verified source fact can appear before a longer investigation. Delivery, opening and explicit review have separate records. External messaging services and server commissioning require operator authorization.
 
 ## 8. Learning during use
 

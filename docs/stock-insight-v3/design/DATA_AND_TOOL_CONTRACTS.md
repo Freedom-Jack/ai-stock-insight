@@ -143,7 +143,7 @@ Coverage belongs to a named family and interval. Distinguish source content age 
 
 Use separate `dispatch_outbox` and `notification_outbox` tables with stable deduplication keys, attempt records, next-attempt time and expiration. Both are committed with the state they announce. Consumers retry at least once; application-level keys yield one accepted effect.
 
-Notification states: `queued`, `attempting`, `provider_accepted`, `confirmed_delivered`, `failed`, `expired`. User review is a separate record. The durable local inbox is committed with the brief; optional desktop/push delivery can fail without losing the brief. Do not label unsupported delivery confirmation as received/read.
+Notification outcomes include queuing, attempt, provider acceptance, observable delivery, failure and expiry. An interrupted attempt with unknown delivery retains that uncertainty. Commit the durable inbox with the brief, then deliver through the configured external route. Preserve the brief on delivery failure. Record user review separately.
 
 On restart/resume: obtain the single-instance lock; reconcile missed obligations and leases; verify pending snapshot references; restore outbox processing; refresh stale sources; create one bounded catch-up per goal/coverage range; then normal dispatch. Preserve each missed occurrence. Supersede obsolete summaries without deleting their records.
 

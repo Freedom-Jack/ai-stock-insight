@@ -28,7 +28,7 @@ Version 3.2, 20 November 2026. This file prevents research possibilities from si
 
 - U.S. equities with globally relevant sources; America/New_York market timezone and America/Toronto reporting timezone.
 - One runtime investigation at a time; bounded per-job requests and wall time; source-specific rate limits.
-- Trial uses the local inbox with optional Windows integration. Continuous server operation uses a configured off-device notification route, independent health and off-host backups.
+- Trial uses the local inbox and a verified external notification route. Windows desktop delivery satisfies the local requirement. Continuous server operation uses a configured off-device notification route, independent health and off-host backups.
 - Weekly look-ahead, pre-market and closing summaries are suggested schedules, activated/configured during setup.
 - Instrument-only manual/selected-file snapshots of the external list; authority remains IBKR; company/instrument identity stays explicit; semiconductors is an example theme.
 - Prefer a free/already-owned data entitlement. Fiscal.ai's documented free NVDA/MSFT coverage is a candidate, not evidence of the user's configured access.

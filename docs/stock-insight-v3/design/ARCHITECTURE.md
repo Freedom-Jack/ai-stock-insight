@@ -138,7 +138,7 @@ Physical deployment changes availability, not the domain model. Define two confi
 
 | Profile | Purpose and implementation |
 |---|---|
-| `local_trial` | Development, testing and initial personal use. Run the application/selected worker in a foreground WSL session with a local inbox. Windows autostart, companion watchdog and toasts are optional; do not build them before the useful research loop. Preserve misses after interruption. |
+| `local_trial` | Development, testing and initial personal use. Run the foreground application and selected worker on the trial computer. Preserve reports in a local inbox, verify an external notification with the browser closed and record misses after interruption. The Windows trial uses the signed-in desktop. Autostart and a companion watchdog are optional. |
 | `server_single_node` | Planned 24/7 operation. Run the same release on one Linux host under supervision, with durable storage, verified worker permissions, off-host backups, an independent health observer and a configured notification route. No distributed rewrite is required. |
 
 Recovery reconstructs expected obligations, not fictional observations. A trial label never waives credential, portfolio or tool-access boundaries. Use sanitized fixtures until those boundaries are verified for live work, or choose a supported application-tool API executor.
