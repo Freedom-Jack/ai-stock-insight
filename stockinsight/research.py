@@ -159,7 +159,7 @@ def _deadline(seconds):
 
 def claim(db, job_id, execution_secret, request_id):
     """Called by the trusted dispatcher. The worker never chooses its identity."""
-    from . import announcement_research, memory
+    from . import announcement_research, memory, price_research
 
     with write(db) as seq:
         job = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
@@ -182,6 +182,8 @@ def claim(db, job_id, execution_secret, request_id):
         method = METHOD
         if not is_fixture(db) and announcement_research.accepts(case["question"], item):
             method = announcement_research.METHOD
+        elif price_research.accepts(case["question"]):
+            method = price_research.METHOD
         context = {
             "instrument": {
                 k: item.get(k)
@@ -202,9 +204,12 @@ def claim(db, job_id, execution_secret, request_id):
             "at_seq": seq,
             "case_id": case["id"],
             "question": case["question"],
-            "required_checks": required_checks(case["question"]),
+            "required_checks": (
+                ["price_context"] if method == price_research.METHOD else required_checks(case["question"])
+            ),
             "source_updates": memory.attachments(db,case["id"],job["base_revision"],case["cutoff"]),
-            "prior_research": memory.recall(db,item["id"]),
+            "dependencies": memory.dependencies(db,case["id"],job["base_revision"]),
+            "prior_research": memory.recall(db, item["id"], case["cutoff"]),
         }
         run_id, generation = uid("run"), job["generation"] + 1
         lease = _lease(execution_secret, run_id, generation)
@@ -305,6 +310,8 @@ def validate(db, run, body, receipts):
             quoted_ids.update(output["evidence_ids"])
         if receipt["tool"] == "compare_financials" and receipt["status"] == "ok":
             calculation_inputs[receipt["id"]] = output["data"]["input_ids"]
+        if receipt["tool"] == "price_context" and output["data"].get("calculation"):
+            calculation_inputs[receipt["id"]] = output["data"]["calculation"]["input_ids"]
     if not set(context["required_checks"]).issubset({r["tool"] for r in receipts}):
         raise ValueError("Missing required price or expectation coverage receipt")
     pending = gaps.outstanding(db, run, receipts)
@@ -428,7 +435,7 @@ def submit(db, lease, body, runtime):
 
 
 def run_job(db, job_id, *, engine="responses"):
-    from . import executor
+    from . import executor, price_research
     from .bridge import Bridge
 
     lease = claim(db, job_id, secrets.token_urlsafe(32), uid("dispatch"))
@@ -441,7 +448,15 @@ def run_job(db, job_id, *, engine="responses"):
         "billing_mode": "offline" if fixture else "unconfigured",
     }
     try:
-        if not fixture and engine in ("local", "device"):
+        if context["method"] == price_research.METHOD and engine in ("local", "device", "responses"):
+            runtime = {
+                "adapter": "local-market-closes/1",
+                "actual_model": None,
+                "billing_mode": "local_no_provider_charges",
+                "requests_attempted": 0,
+            }
+            result = price_research.execute(context, bridge.call, runtime)
+        elif not fixture and engine in ("local", "device"):
             from . import local_research
 
             runtime = {"adapter": engine, "billing_mode": "local_no_provider_charges"}

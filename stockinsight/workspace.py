@@ -53,7 +53,7 @@ def case_detail(db, case_id):
                 "manifest": manifest,
                 "sources": passages,
                 "receipts": receipts,
-                "comparisons": [r["output"]["data"] for r in receipts if r["id"] in accepted_calculations],
+                "comparisons": [r["output"]["data"].get("calculation",r["output"]["data"]) for r in receipts if r["id"] in accepted_calculations],
             }
         )
     return {

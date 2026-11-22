@@ -1,0 +1,49 @@
+<h1>Watchlist exposures</h1>
+<p>Use a saved passage to explain how an entity, geography, policy or theme could affect a watched company. An approved relationship can inform the review of matching events.</p>
+{% for c in exposure.candidates %}
+  <article><small>Candidate from a standing goal · {{ listing(c.listing) }}</small>
+    <h2>{{ c.entity }}</h2><p>{{ exposure.relations[c.relation] }} · {{ c.passage.title }}</p><blockquote>{{ c.passage.text }}</blockquote>
+    <details><summary>Propose this relationship</summary><form method="post" action="/actions/exposure-propose">{{ token() }}
+      <input type="hidden" name="instrument_id" value="{{ c.listing.id }}"><input type="hidden" name="entity_type" value="{{ c.entity_type }}">
+      <input type="hidden" name="entity" value="{{ c.entity }}"><input type="hidden" name="relation" value="{{ c.relation }}">
+      <input type="hidden" name="counterparty" value="{{ c.counterparty or '' }}"><input type="hidden" name="theme" value="{{ c.theme or '' }}">
+      <input type="hidden" name="passage_id" value="{{ c.passage.id }}">
+      <label>Trigger event <select name="trigger_kind">{% for k,label in exposure.trigger_kinds.items() %}<option value="{{ k }}" {% if k==c.trigger_kind %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label>How could this affect the listing? <textarea name="rationale" required maxlength="900"></textarea></label>
+      <button>Save proposal for review</button></form></details>
+  </article>
+{% endfor %}
+{% for row in exposure.choices %}<details><summary>Propose a relationship for {{ listing(row.listing) }}</summary>
+  <form method="post" action="/actions/exposure-propose">{{ token() }}<input type="hidden" name="instrument_id" value="{{ row.listing.id }}">
+    <label>Subject type <select name="entity_type">{% for k,label in exposure.entity_types.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></label>
+    <label>Named entity, geography or policy <input name="entity" maxlength="100"></label>
+    <label>Watched company, when selected <select name="counterparty"><option value="">Choose a counterparty listing</option>
+      {% for i in exposure.instruments if i.company_id and i.company_id!=row.listing.company_id %}<option value="{{ i.id }}">{{ listing(i) }}</option>{% endfor %}</select></label>
+    <label>Research theme, when selected <select name="theme"><option value="">Choose a saved theme</option>
+      {% for t in exposure.themes %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label>
+    <label>Relationship <select name="relation">{% for k,label in exposure.relations.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></label>
+    <label>Event that should prompt research <select name="trigger_kind">{% for k,label in exposure.trigger_kinds.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></label>
+    <label>Source passage ID <input name="passage_id" list="passages-{{ row.listing.id }}" required></label>
+    <datalist id="passages-{{ row.listing.id }}">{% for p in row.passages %}<option value="{{ p.id }}">{{ p.title }} · {{ p.text|truncate(100) }}</option>{% endfor %}</datalist>
+    {% if row.passages %}<details><summary>Read available passages</summary>{% for p in row.passages %}<p>{{ p.title }} · <code>{{ p.id }}</code></p><blockquote>{{ p.text }}</blockquote>{% endfor %}</details>{% endif %}
+    <label>Exact quotation, or leave empty to use the passage <textarea name="quotation" rows="2" maxlength="2400"></textarea></label>
+    <label>Mechanism and uncertainty <textarea name="rationale" rows="2" required maxlength="900"></textarea></label>
+    <label>Last applicable day (UTC), if known <input type="date" name="expires_on"></label>
+    <button>Save proposal for review</button>
+  </form>
+</details>{% else %}<p><a href="/universe">Add a watchlist listing</a> to review relationships.</p>{% endfor %}
+{% if exposure.proposals %}<h2>Relationship history</h2>{% endif %}
+{% for p in exposure.proposals %}<article>
+  <small>{{ p.ticker }} · {{ p.state | capitalize }} · proposed {{ p.created_at }}</small>
+  <h3>{{ p.entity }}</h3><p>{{ exposure.relations[p.relation] }} · {{ exposure.trigger_kinds[p.trigger_kind] }}</p>
+  <p>{{ p.rationale }}</p><blockquote>{{ p.quotation }}</blockquote>
+  <small>{{ p.title }} · captured {{ p.received_at }} · <code>{{ p.passage_id }}</code></small>
+  {% if p.source_url.startswith('https://') %}<p><a href="{{ p.source_url }}" rel="noreferrer">Open source</a></p>{% endif %}
+  {% if p.expires_on %}<p>Applicable through {{ p.expires_on }} UTC.</p>{% endif %}
+  {% if not p.current %}<p>The relationship is outside its validity period or its cited edition is no longer current and verified.</p>{% endif %}
+  {% if not p.active %}<p>The listing is outside the active watchlist.</p>{% endif %}
+  {% if p.state=='proposed' and p.current and p.active %}<form method="post" action="/actions/exposure-approve">{{ token() }}<input name="proposal" type="hidden" value="{{ p.id }}"><button>Approve relationship</button></form>{% endif %}
+  {% if p.state!='revoked' %}<details><summary>Withdraw relationship</summary><form method="post" action="/actions/exposure-revoke">{{ token() }}
+    <input name="proposal" type="hidden" value="{{ p.id }}"><label>Reason <input name="reason" maxlength="600" required></label><button>Withdraw</button></form></details>{% endif %}
+  {% for d in p.decisions %}<p><small>{{ d.state|capitalize }} · You · {{ d.observed_at }}</small><br>{{ d.reason }}</p>{% endfor %}
+</article>{% endfor %}

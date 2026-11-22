@@ -31,8 +31,9 @@
 {% endmacro %}
 {% macro sources(p) %}
   <blockquote>{{ p.text }}</blockquote>
-  {% if p.financial %}{% set f=p.financial %}<p>{{ f.company }} · {{ f.metric }} · {{ f.value }} {{ f.unit }} · {{ f.basis }}<br>
-    {{ f.period_label }} ({{ f.period_start }} to {{ f.period_end }}) · {{ f.currency }} · {{ f.share_basis }}</p>{% endif %}
+  {% if p.financial %}{% set f=p.financial %}{% if f.metric=='close_price' %}<p>{{ f.value }} {{ f.unit }} · {{ f.adjustment | replace('_',' ') }} · {{ f.exchange }} regular session<br>{{ f.session_end }} · {{ f.publisher }} · Reported delay {{ f.delay_seconds }} seconds</p>
+  {% else %}<p>{{ f.company }} · {{ f.metric }} · {{ f.value }} {{ f.unit }} · {{ f.basis }}<br>
+    {{ f.period_label }} ({{ f.period_start }} to {{ f.period_end }}) · {{ f.currency }} · {{ f.share_basis }}</p>{% endif %}{% endif %}
   <small>{{ p.title }} · {{ p.locator }} · Published {{ p.published_at or 'unknown' }} · Captured {{ p.received_at }}</small>
   {% if p.source_url and p.source_url.startswith('https://') %}<a href="{{ p.source_url }}" rel="noreferrer">Original source</a>{% endif %}
   <details><summary>Source version</summary><code>{{ p.version_hash }}</code><p>{{ p.origin }} · {{ p.id }}</p>
@@ -57,6 +58,11 @@
     {% else %}<p>No pending questions or review conditions.</p>{% endfor %}<a href="/upcoming">Open upcoming research</a></section>
   {% if monitor.events %}<section><h2>Recent watchlist events</h2>{% for e in monitor.events[:5] %}<p><small>{{ e.ticker or e.raw_label }} · {{ (e.occurred_at or e.scheduled_start or 'Date unknown')[:10] }}</small><br><a href="/monitor">{{ e.title | replace('_', ' ') }}</a></p>{% endfor %}</section>{% endif %}
 {% elif view=='goals' %}{% include 'goals.html' %}
+{% elif view=='agenda' %}{% include 'agenda.html' %}
+{% elif view=='event' %}<p><a href="/monitor">Events and monitoring</a></p><h1>{{ event.kind | replace('_',' ') | capitalize }}</h1>
+<p>{{ event.state }} · {{ event.occurred_at or event.scheduled_start }}{% if event.scheduled_end %} through {{ event.scheduled_end }}{% endif %} · {{ event.precision }} precision</p>
+{{ sources(source) }}{% if event.supersedes %}<p><a href="/events/{{ event.supersedes }}">Earlier event edition</a></p>{% endif %}
+{% elif view=='exposure' %}{% include 'exposure.html' %}
 {% elif view=='goal_report' %}{% include 'goal_report.html' %}
 {% elif view=='methods' %}{% include 'methods.html' %}
 {% elif view=='monitor' %}{% include 'monitor.html' %}
@@ -118,6 +124,7 @@
   {% include 'case_notes.html' %}
 {% elif view=='universe' %}
   <h1>Companies &amp; themes</h1>
+  <p><a href="/exposures">Review evidence for business and policy relationships</a></p>
   {% for s in universe.sources %}<section><h2>{{ s.alias }}</h2><p>{{ s.status }} · External membership · {{ s.mode }}<br>Last accepted observation {{ s.last_success_at or 'pending' }}</p></section>{% endfor %}
   {% for c in universe.candidates %}<div class="box"><strong>{{ c.state }}</strong> · {{ c.source_alias }} ({{ c.source_id }}) · {{ c.reason }}<p>{{ c.added }} additions, {{ c.removed }} removals</p>
     <ul>{% for change in c.affected %}<li>{{ change.action | capitalize }} · {{ change.label }}</li>{% endfor %}</ul>
@@ -148,7 +155,7 @@
   <button>Import selected research</button></form></details>
 {% elif view=='memory' %}
   <p><a href="/companies/{{ record.instrument_id }}">Back to company</a></p><h1>{{ record.title }}</h1><small>Imported {{ record.imported_at }} · {{ record.kind }}</small>
-  {% if record.kind=='conversation' %}{% for m in record.payload %}<article><strong>{{ m.role | capitalize }}</strong><p>{{ m.content }}</p></article>{% endfor %}
+  {% if record.kind=='conversation' %}{% for m in record.payload %}<article><strong>{{ m.role | capitalize }}</strong> · {{ m.timestamp or 'Original time unknown' }}<p>{{ m.content }}</p></article>{% endfor %}
   {% else %}{% for r in record.payload.case.revisions %}<article><h2>Archived revision {{ r.revision }}</h2><p>{{ r.body.conclusion }}</p><p>{{ r.method }} · {{ r.as_of }}</p>{% for s in r.sources %}<p>{{ s.title }} · {{ s.locator }}<br>{{ s.text }}</p>{% endfor %}</article>{% endfor %}{% endif %}
 {% elif view=='status' %}
   <h1>Workspace status</h1><h2>Investigator</h2>

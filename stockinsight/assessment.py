@@ -414,8 +414,10 @@ def _ids(value):
 
 def render(context, selection, calls):
     """Derive canonical human-readable fields, plus machine-readable support."""
-    from . import announcement_research
+    from . import announcement_research, price_research
 
+    if context.get("method") == price_research.METHOD:
+        return price_research.render(context, selection, calls)
     if context.get("method") == announcement_research.METHOD:
         return announcement_research.render(context, selection, calls)
     intent = objective(context["question"])
@@ -615,6 +617,11 @@ def render(context, selection, calls):
             raise ValueError("Read the linked primary-source qualification before revising this case")
         summaries.append(f"The source passage flagged by the operator as {relation} reads “{passages[ref]['text']}”")
         notes.append("Review how this disclosure affects the earlier interpretation. Its author and data date are recorded with the citation.")
+    for d in context.get("dependencies",[]):
+        if d["origin"]=="operator" and d["new_ref"] in ids:
+            changes.append(f"Revision {d['revision']}, claim {d['claim_no']+1}: the operator identified {d['relation']} and recorded this reason: {d['rationale']}")
+        elif d["origin"]=="source_check":
+            changes.append(f"The source for revision {d['revision']}, claim {d['claim_no']+1} changed. This assessment uses the eligible source edition.")
     if financial_docs - {p["document_id"] for p in qualifications}:
         notes.append(
             "The retained financial cells establish the amounts. Review the full disclosure for qualifications before interpreting their cause."
@@ -655,6 +662,8 @@ def render(context, selection, calls):
 
 
 def validate_assessment(db, run, body, receipts):
+    from . import price_research
+
     context = json.loads(run["context"])
     calls = []
     for row in receipts:
@@ -668,6 +677,13 @@ def validate_assessment(db, run, body, receipts):
     selection = {k: body[k] for k in ("status", "gaps", "calculations")}
     selection["passage_ids"] = [ref for claim in body["claims"] for ref in claim["evidence_refs"]]
     expected, assertions = render(context, selection, calls)
+    if context.get("method") == price_research.METHOD:
+        frozen = next(output["data"] for name, output in reversed(calls) if name == "price_context")
+        if price_research.window(db, context) != frozen:
+            raise ValueError("Market-close evidence changed before submission. Read the window again.")
+        if expected != body:
+            raise ValueError("Unsupported market-close assessment.")
+        return assertions
     intent = objective(context["question"])
     for metric, period in intent.latest_requirements:
         selected = [

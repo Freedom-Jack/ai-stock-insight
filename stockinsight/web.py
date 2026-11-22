@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse,
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from . import delivery, evidence, goals, journal, local_research, memory, methods, monitor, ownership, providers, research, sources_calendar, universe, workspace
+from . import agenda, delivery, evidence, exposure, goals, journal, local_research, memory, methods, monitor, ownership, providers, research, sources_calendar, universe, workspace
 from .db import connect, is_fixture, uid
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).with_name("templates"))
@@ -133,10 +133,28 @@ def application(path, port, login_code, *, request_stop=None):
         with closing(connect(path)) as db:
             return page(req, db, "monitor", monitor=monitor.dashboard(db), universe=universe.universe(db))
 
+    @app.get("/events/{version}")
+    def event_observation(req:Request,version:str):
+        with closing(connect(path)) as db:
+            row=db.execute("SELECT * FROM event_versions WHERE id=?",(version,)).fetchone()
+            if not row:
+                raise ValueError("Unknown event edition")
+            return page(req,db,"event",event=dict(row),source=evidence.get(db,row["instrument_id"],row["source_ref"],fixture=is_fixture(db)))
+
     @app.get("/goals")
     def standing(req: Request):
         with closing(connect(path)) as db:
             return page(req, db, "goals", goals=goals.dashboard(db), universe=universe.universe(db))
+
+    @app.get("/agenda")
+    def agenda_view(req:Request):
+        with closing(connect(path)) as db:
+            return page(req,db,"agenda",agenda=agenda.dashboard(db))
+
+    @app.get("/exposures")
+    def exposure_view(req:Request):
+        with closing(connect(path)) as db:
+            return page(req,db,"exposure",exposure=exposure.dashboard(db))
 
     @app.get("/goals/reports/{report_id}")
     def alert_report(req: Request, report_id: str):
@@ -223,6 +241,10 @@ def application(path, port, login_code, *, request_stop=None):
 
     def mutate(action, data):
         with closing(connect(path)) as db:
+            if action.startswith("agenda-"):
+                return agenda.action(db,action,data)
+            if action.startswith("exposure-"):
+                return exposure.action(db,action,data)
             if action.startswith("memory-"):
                 return memory.action(db,action,data)
             if action.startswith("goal-"):

@@ -5,7 +5,7 @@ import unittest
 from contextlib import closing
 from unittest.mock import patch
 
-from stockinsight import db, events, evidence, filing_passages, monitor, providers
+from stockinsight import db, events, evidence, filing_passages, goals, monitor, proactive, providers
 from stockinsight import sources_calendar as sources
 from tests.test_insight_evidence import workspace
 
@@ -79,6 +79,17 @@ class CalendarSourceTests(unittest.TestCase):
             )
         monitor._observe(self.conn, listing, route, doc)
         return doc
+
+    def test_one_macro_notice_links_both_watchlist_reports(self):
+        self.save("fed_calendar",fed(),"MSFT")
+        self.save("fed_calendar",fed(),"NVDA")
+        goals.save(self.conn,{"key":"shared-fed","objective":"Prepare me for monetary policy events"},at=NOW)
+        with patch("stockinsight.local_model.available",return_value=False):
+            reports=[proactive.tick(self.conn,at=NOW) for _ in range(2)]
+        self.assertTrue(all(reports))
+        self.assertNotEqual(*reports)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM delivery_notices").fetchone()[0],1)
+        self.assertEqual(goals.report(self.conn,reports[0])["related_reports"][0]["id"],reports[1])
 
     def test_year_event_revisions_cancellation_checked_mirror_and_replay(self):
         first = annual("will be held virtually on December 8, 2026, at 8:30 am PT.")

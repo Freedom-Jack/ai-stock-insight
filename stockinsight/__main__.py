@@ -11,7 +11,7 @@ import webbrowser
 from contextlib import closing
 from pathlib import Path
 
-from . import evidence, executor, local_research, memory, providers, research, sources_calendar, universe, workspace
+from . import delivery, evidence, executor, local_research, memory, proactive, providers, research, sources_calendar, universe, workspace
 from .db import connect, is_fixture
 
 EXAMPLE = Path(__file__).with_name("fixtures") / "training-list.csv"
@@ -160,6 +160,7 @@ def operate(db, args):
         display(result)
         return int(bool(result["problems"]))
     elif name == "doctor":
+        channel=delivery.dashboard(db)
         display(
             {
                 "profile": "fixture" if is_fixture(db) else "local_trial",
@@ -172,6 +173,10 @@ def operate(db, args):
                             "hosted_responses": executor.preflight()},
                 "providers": providers.capabilities(db),
                 "monitoring": "foreground while serve is running",
+                  "notification_route":{k:channel[k] for k in ("channel","enabled","available")},
+                  "limits":{"autonomous_attempts_per_utc_day":proactive.GLOBAL_DAILY_LIMIT,
+                            "active_goals":db.execute("SELECT count(*) FROM goal_plans WHERE ended_at IS NULL").fetchone()[0],
+                            "auto_corrections_per_utc_day":memory.DAILY_LIMIT},
             }
         )
     elif name == "universe":

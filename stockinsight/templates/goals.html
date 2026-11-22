@@ -7,7 +7,7 @@
   {% for i in universe.instruments %}<option value="listing:{{ i.id }}" {% if plan and plan.scope=='listing:'~i.id %}selected{% endif %}>{{ listing(i) }}</option>{% endfor %}
   {% for t in universe.themes %}<option value="theme:{{ t.id }}" {% if plan and plan.scope=='theme:'~t.id %}selected{% endif %}>Theme · {{ t.name }}</option>{% endfor %}</select></label>
   <details><summary>Schedule and research limits</summary>
-    <label>Frequency <select name="cadence">{% for c in ['auto','daily','weekdays','premarket','closing','monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}<option {% if plan and plan.cadence==c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+    <label>Frequency <select name="cadence">{% if plan and ',' in plan.cadence %}<option selected>{{ plan.cadence }}</option>{% endif %}{% for c in ['auto','daily','weekdays','premarket','closing','monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}<option {% if plan and plan.cadence==c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
     <label>Local time <input type="time" name="clock" value="{{ plan.clock if plan else '' }}"></label>
     <label>Reporting timezone <input name="timezone" value="{{ plan.timezone if plan else 'America/Toronto' }}" required></label>
     <label>Timing <select name="intent">{% for v,l in [('auto','Interpret the goal'),('report_by','Report by this time'),('start_at','Start work at this time')] %}<option value="{{ v }}" {% if plan and plan.intent==v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
@@ -18,12 +18,13 @@
 </form>
 {% endmacro %}
 <h1>Standing goals</h1>
+<p><a href="/agenda">Ranked research agenda</a> · <a href="/exposures">Reviewed exposures</a></p>
 {% if goals.plans %}<details><summary>Adopt another goal</summary>{{ goal_form() }}</details>{% else %}{{ goal_form() }}{% endif %}
 {% for p in goals.plans %}<article><h2>{{ p.objective }}</h2><p>{{ p.cadence | capitalize }} · {{ p.intent | replace('_',' ') }} {{ p.clock }} {{ 'America/New_York (market session)' if p.cadence in ['premarket','closing'] else p.timezone }} · {{ p.daily_limit }} investigations/day</p>
   <details><summary>Edit this goal</summary>{{ goal_form(p) }}<form method="post" action="/actions/goal-stop">{{ token() }}<input type="hidden" name="plan" value="{{ p.id }}"><button>Stop this goal</button></form></details></article>{% endfor %}
 <h2>Reports and pending research</h2>{% for r in goals.reports %}<article>
   <small>{{ r.kind }} · {{ r.state }} · {{ r.ended_at or r.ready_at }}</small>
   {% if r.state=='complete' %}<p><a href="/goals/reports/{{ r.id }}">{{ r.title or r.objective }}</a> · {{ 'Reviewed' if r.reviewed_at else 'Unread' }}</p>{% else %}<p>{{ r.objective }} {{ r.detail or '' }}</p>{% endif %}</article>{% else %}<p>No investigations dispatched yet.</p>{% endfor %}
-<details><summary>Expected deadlines and recovery</summary>{% for d in goals.deadlines %}<p>{{ d.due_at }} · {{ d.state }} · {{ d.objective }}{% if d.finished_at %}<br>Finished {{ d.finished_at }}{% endif %}</p>{% endfor %}</details>
+<details><summary>Expected deadlines and recovery</summary><p>Times below are UTC. Market-relative goals use {{ goals.market_calendar }}. A start-at goal allows one minute for dispatch.</p>{% for d in goals.deadlines %}<p>{{ d.due_at }} · {{ d.state }} · {{ d.objective }}{% if d.finished_at %}<br>Finished {{ d.finished_at }}{% endif %}</p>{% endfor %}</details>
 <details><summary>Relevance decisions</summary>{% for d in goals.decisions %}<p>{{ d.decision }} · {{ d.reason }}<br><small>{{ d.observed_at }} · <code>{{ d.event_version_id }}</code></small></p>{% endfor %}</details>
 <details><summary>Goal history and usage</summary><p>{{ goals.usage }} of 24 autonomous investigation attempts today (UTC).</p>{% for p in goals.versions %}<p>Version {{ p.version }} · {{ p.objective }} · Ended {{ p.ended_at }}</p>{% endfor %}</details>

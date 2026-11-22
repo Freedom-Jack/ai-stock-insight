@@ -289,7 +289,17 @@ def register(db, run, name, args, status, data, defaults, seq):
         example = f"Read an eligible {spec} observation with a source version, units and financial basis."
     elif name in defaults and status != "ok":
         cause, impact, fallback, remedy, example = defaults[name]
-        if name == "capture_public":
+        if name == "price_context" and "calculation" in data:
+            start, end = data.get("start"), data.get("end")
+            requirement.update(start=start, end=end)
+            capability = f"price_context ({start} to {end})" if start and end else "price_context (session dates)"
+            cause = "history_missing" if not data["calculation"] else "unsupported"
+            impact = " ".join(data["gaps"]) or "The complete requested price window is unresolved."
+            remedy = ("Use the Methods page to import matching attributed regular closes, "
+                      "or ask a single-listing, two-date closing-price question.")
+            fallback = "Use only the session endpoints and price arithmetic actually observed."
+            example = "Return the requested two dated closes for one listing, currency, series and adjustment basis."
+        elif name == "capture_public":
             provider = args["provider"]
             capability = f"capture_public ({provider})"
             cause, remedy = CAPTURE_CAUSES.get(status, ("temporarily_unavailable", remedy))
@@ -434,6 +444,7 @@ def reconcile(db, run, name, args, output, seq):
         "next_evidence_page",
         "get_evidence",
         "compare_financials",
+        "price_context",
     ):
         return
     gaps = db.execute(
@@ -446,6 +457,14 @@ def reconcile(db, run, name, args, output, seq):
     context = json.loads(run["context"])
     objective = assessment.objective(context["question"])
     data = output["data"]
+    price_proof = []
+    if name == "price_context":
+        from . import price_research
+
+        if (context["method"] != price_research.METHOD or not data.get("calculation")
+                or price_research.window(db, context) != data):
+            return
+        price_proof = data["evidence_ids"]
     # Exact passage IDs intentionally remain readable after a correction. Only
     # a version still eligible for this assignment may resolve a current gap.
     if name == "compare_financials":
@@ -462,7 +481,11 @@ def reconcile(db, run, name, args, output, seq):
         req = _stored_requirement(db, gap)
         proof = []
         receipts = {output["receipt_id"]}
-        if req["kind"] == "metric":
+        if req["kind"] == "price_context" and price_proof and (
+            not req.get("start") or (req["start"], req["end"]) == (data["start"], data["end"])
+        ):
+            proof = price_proof
+        elif req["kind"] == "metric":
             proof = [p["id"] for p in readings if _matches(p, req["metric"], req["period"], objective)]
         elif req["kind"] in ("search_evidence", "capture_public") and readings:
             if history is None:

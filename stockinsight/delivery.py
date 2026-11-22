@@ -35,7 +35,7 @@ CREATE TABLE delivery_attempts(
 
 _ID = r"[A-Za-z0-9_-]{1,96}"
 _REPORT = re.compile(
-    rf"/(?:today|status|journal|upcoming|goals(?:/reports/{_ID})?|cases/{_ID}|"
+    rf"/(?:today|status|journal|upcoming|goals(?:/reports/{_ID})?|cases/{_ID}|events/{_ID}|"
     rf"methods(?:\?instrument_id={_ID})?(?:#{_ID})?)\Z"
 )
 GENERIC_TITLE = "Stock Insight"

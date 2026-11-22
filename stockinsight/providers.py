@@ -97,7 +97,7 @@ def capabilities(conn=None):
         {
             "id": "market_price",
             "configured": False,
-            "coverage": "No verified interval, session, adjustment basis or delay",
+            "coverage": "Automatic market prices unavailable. Research methods can use operator-supplied regular closing observations with an explicit session, adjustment, source and delay.",
         },
         {
             "id": "issuer_news",

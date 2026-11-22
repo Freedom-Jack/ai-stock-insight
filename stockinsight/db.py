@@ -64,7 +64,7 @@ def _apply(conn, script):
 
 
 def migrations():
-    from . import delivery, evidence, gaps, goals, journal, memory, methods, monitor, research, sources_calendar, universe
+    from . import agenda, delivery, evidence, exposure, gaps, goals, journal, memory, methods, monitor, research, sources_calendar, universe
 
     return [
         FOUNDATION + universe.SCHEMA + evidence.SCHEMA + research.SCHEMA,
@@ -72,6 +72,10 @@ def migrations():
         journal.SCHEMA + monitor.SCHEMA,
         goals.SCHEMA + sources_calendar.SCHEMA + methods.SCHEMA + delivery.SCHEMA,
         memory.SCHEMA,
+        agenda.SCHEMA,
+        exposure.SCHEMA,
+        goals.LINKED_EVENTS,
+        goals.SHARED_DELIVERY,
     ]
 
 

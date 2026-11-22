@@ -136,12 +136,13 @@ def configure(db, instrument_id, provider, interval_minutes, enabled, *, at=None
         if expected_id is not _ANY_SCHEDULE and expected_id != (old["id"] if old else None):
             raise ValueError("The active source schedule changed.")
         if old:
-            if goal_managed and not db.execute("SELECT 1 FROM goal_auto_sources WHERE schedule_id=?", (old["id"],)).fetchone():
+            managed=bool(db.execute("SELECT 1 FROM goal_auto_sources WHERE schedule_id=?", (old["id"],)).fetchone())
+            if goal_managed and not managed:
                 raise ValueError("This source schedule belongs to the operator.")
             if (old["interval_minutes"], bool(old["enabled"])) == (
                 interval_minutes,
                 enabled,
-            ):
+            ) and managed==goal_managed:
                 return old["id"]
             if old["enabled"]:
                 _expand(db, old, stamp)
@@ -210,12 +211,19 @@ def _claim(db, stamp):
         ).fetchone():
             return None
         occurrence = db.execute(
-            """SELECT o.id,s.instrument_id,s.provider FROM monitor_occurrences o JOIN monitor_schedules s ON s.id=o.schedule_id
+            """SELECT o.id,s.instrument_id,s.provider,a.schedule_id AS managed FROM monitor_occurrences o JOIN monitor_schedules s ON s.id=o.schedule_id
+               LEFT JOIN goal_auto_sources a ON a.schedule_id=s.id
                WHERE o.status='pending' AND o.scheduled_at<=? AND s.enabled AND s.superseded_at IS NULL
                ORDER BY o.scheduled_at,o.id LIMIT 1""",
             (stamp,),
         ).fetchone()
         if occurrence:
+            if occurrence["managed"]:
+                from . import goals
+                if (occurrence["instrument_id"],occurrence["provider"]) not in goals.desired_sources(db,goals.active(db)):
+                    db.execute("""UPDATE monitor_occurrences SET status='cancelled',finished_at=?,detail='Standing-goal coverage changed'
+                                  WHERE id=?""",(stamp,occurrence["id"]))
+                    return None
             db.execute(
                 "UPDATE monitor_occurrences SET status='running',started_at=?,lease_until=? WHERE id=?",
                 (stamp, _stamp(stamp, LEASE), occurrence["id"]),
@@ -373,12 +381,12 @@ def tick(db, *, at=None, detail=False):
 
 def run_foreground(path, stop_event):
     """Run bounded source, investigation and notification operations on the foreground owner's connection."""
-    from . import delivery, memory, proactive, server_profile
+    from . import agenda, delivery, memory, proactive, server_profile
 
     with closing(connect(path)) as db:
         while not stop_event.is_set():
             busy = False
-            for task in (delivery.tick, tick, proactive.tick, memory.tick):
+            for task in (delivery.tick, tick, proactive.tick, memory.tick, agenda.tick):
                 if stop_event.is_set():
                     break
                 try:

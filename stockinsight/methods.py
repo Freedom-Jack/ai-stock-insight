@@ -157,6 +157,38 @@ def _get(db, listing, ref, cutoff=None, *, current=True):
     return p
 
 
+def _qualifications(db, body, cutoff):
+    """Attach narrative to each cited financial edition at the report's stated information boundary."""
+    financials = {p["document_id"]: p for p in body["citations"] if p["financial"]}
+    coverage = body.setdefault("disclosure_coverage", [])
+    for document, number in financials.items():
+        notes = db.execute(
+            """SELECT id,count(*) OVER () AS total FROM evidence_passages
+               WHERE document_id=? AND financial IS NULL AND available_at<=?
+               ORDER BY locator,id LIMIT 16""",
+            (document, cutoff),
+        ).fetchall()
+        total = notes[0]["total"] if notes else 0
+        coverage.append(
+            {
+                "document_id": document,
+                "source_ref": number["id"],
+                "source_url": number["url"],
+                "as_of": cutoff,
+                "reviewed": len(notes),
+                "unreviewed": total - len(notes),
+            }
+        )
+        for note in notes:
+            passage = evidence.get(db, number["instrument_id"], note["id"], cutoff, fixture=is_fixture(db))
+            _claim(body, "Qualification in the same disclosure: " + passage["text"], passage, number)
+        if total > len(notes):
+            body["gaps"].append(
+                f"{total - len(notes)} additional retained narrative passages in {number['title']} remain unreviewed "
+                f"at {cutoff}. Open cited source {number['id']} for document {document}."
+            )
+
+
 def _numbers(db, listing, *, metric=None, end=None, before=None, cutoff=None, role="actual", limit=40):
     """Select by financial semantics before limiting, using the same as-of edition boundary as search."""
     clauses = [
@@ -407,7 +439,7 @@ def _trend(db, listing, current, body, cutoff=None):
     )
 
 
-def _exposures(db, listing, stamp, body):
+def _exposures(db, listing, stamp, body, approved=()):
     matches = db.execute(
         """SELECT e.*,a.name AS source_company,b.name AS target_company FROM exposures e
            JOIN companies a ON a.id=e.from_company_id JOIN companies b ON b.id=e.to_company_id
@@ -416,7 +448,26 @@ def _exposures(db, listing, stamp, body):
         (listing["company_id"], listing["company_id"], stamp, stamp),
     )
     count = 0
+    linked = {edge["legacy_id"] for edge in approved if edge.get("legacy_id")}
+    for edge in approved:
+        support = _get(db, listing, edge["passage_id"])
+        event_ref = edge["event_passage_id"]
+        hit = db.execute(
+            "SELECT d.instrument_id FROM documents d JOIN evidence_passages p ON d.id=p.document_id WHERE p.id=?",
+            (event_ref,),
+        ).fetchone()
+        trigger = evidence.get(db, hit["instrument_id"], event_ref, fixture=is_fixture(db))
+        _claim(
+            body,
+            f"Approved {edge['relation'].replace('_', ' ')} relationship for {listing['ticker']} with {edge['entity']}. Operator rationale: {edge['reason']}",
+            support,
+            trigger,
+        )
+        body["claims"][-1]["kind"] = "reviewed_relationship"
+        count += 1
     for row in matches:
+        if row["id"] in linked:
+            continue
         refs = []
         for ref in json.loads(row["evidence_refs"]):
             hit = db.execute(
@@ -442,7 +493,26 @@ def _exposures(db, listing, stamp, body):
         body["gaps"].append("No dated, supported company relationship establishes indirect exposure.")
 
 
-def event_report(db, event_version_id, *, goal_id=None, objective="", focus=None, request_key=None):
+def _time_span(event):
+    start = event["occurred_at"] or event["scheduled_start"]
+    end = None if event["occurred_at"] else event["scheduled_end"]
+    if not start:
+        return "time unknown"
+    span = f"{start} through {end}" if end and end != start else start
+    if event["precision"] == "day":
+        span += (
+            " (calendar-date precision"
+            + (f", {event['source_timezone']}" if event["source_timezone"] else "")
+            + ")"
+        )
+    return span
+
+
+def event_report(
+    db, event_version_id, *, goal_id=None, objective="", focus=None, request_key=None, instrument_id=None
+):
+    from . import exposure
+
     if focus and focus not in FOCI:
         raise ValueError("Unknown event investigation focus.")
     if not isinstance(objective, str) or len(objective) > 3000:
@@ -450,17 +520,31 @@ def event_report(db, event_version_id, *, goal_id=None, objective="", focus=None
     if request_key is not None and (not isinstance(request_key, str) or not 1 <= len(request_key) <= 160):
         raise ValueError("Invalid dispatch request key.")
     with write(db) as seq:
+        event = _event(db, event_version_id, current=False)
+        subject = instrument_id if instrument_id is not None else event["instrument_id"]
+        direct = subject == event["instrument_id"]
         dispatch_key = _digest(["dispatch", request_key]) if request_key else None
         if dispatch_key:
             replay = db.execute(
-                "SELECT id,event_version_id,goal_id FROM method_reports WHERE dedup_key=?", (dispatch_key,)
+                "SELECT id,instrument_id,event_version_id,goal_id FROM method_reports WHERE dedup_key=?",
+                (dispatch_key,),
             ).fetchone()
             if replay:
-                if (replay["event_version_id"], replay["goal_id"]) != (event_version_id, goal_id):
-                    raise ValueError("The dispatch key already belongs to a different event or goal.")
+                if (replay["event_version_id"], replay["goal_id"], replay["instrument_id"]) != (
+                    event_version_id,
+                    goal_id,
+                    subject,
+                ):
+                    raise ValueError(
+                        "The dispatch key already belongs to a different event, goal or listing."
+                    )
                 return export(db, replay["id"])
-        event = _event(db, event_version_id, current=False)
-        earnings = event["kind"] in ("earnings_release", "earnings_call", "earnings", "financial_filing")
+        earnings = direct and event["kind"] in (
+            "earnings_release",
+            "earnings_call",
+            "earnings",
+            "financial_filing",
+        )
         preview = event["state"] in ("confirmed", "tentative", "postponed")
         method = (
             "earnings_preparation.v1"
@@ -471,30 +555,58 @@ def event_report(db, event_version_id, *, goal_id=None, objective="", focus=None
         )
         focus = focus or ("expectations" if earnings else "disclosure")
         fixed_key = dispatch_key or (
-            _digest([goal_id, event_version_id, method, objective, focus]) if goal_id else None
+            _digest([goal_id, event_version_id, subject, method, objective, focus]) if goal_id else None
         )
         if fixed_key:
             previous = db.execute("SELECT id FROM method_reports WHERE dedup_key=?", (fixed_key,)).fetchone()
             if previous:
                 return export(db, previous["id"])
         event = _event(db, event_version_id)
-        listing = universe.instrument(db, event["instrument_id"])
-        source = _get(db, listing, event["source_ref"], current=False)
+        listing = universe.instrument(db, subject)
+        event_listing = universe.instrument(db, event["instrument_id"])
+        approved = exposure.for_event(db, listing, event_version_id)
+        if not direct and not approved:
+            raise ValueError("This event lacks an approved relationship to the research listing.")
+        source = _get(db, event_listing, event["source_ref"], current=False)
         body = _body()
         body.update(event=event, objective=objective, focus=focus)
-        time = event["occurred_at"] or event["scheduled_start"] or "time unknown"
-        title = f"{listing['ticker']} · {event['kind'].replace('_', ' ')}"
-        summary = f"{event['kind'].replace('_', ' ').capitalize()} for {listing['ticker']}: {event['state']}, {time}."
+        time = _time_span(event)
+        company = event_listing.get("company_name") or event_listing["ticker"]
+        title = f"{company} {event['kind'].replace('_', ' ')}"
+        if not direct:
+            title += f" · relevance to {listing['ticker']}"
+        summary = f"{company} {event['kind'].replace('_', ' ')} was recorded as {event['state']} ({time})."
         calendar = db.execute(
             """SELECT title,relevance FROM calendar_reports WHERE source_ref=? AND instrument_id=?
             ORDER BY commit_seq DESC LIMIT 1""",
-            (source["id"], listing["id"]),
+            (source["id"], event_listing["id"]),
         ).fetchone()
-        if calendar:
-            summary = f"{calendar['title']}: {event['state']}, {time}. {calendar['relevance']}"
+        fed_calendar = event["kind"] == "monetary_policy_meeting" and source["origin"] == "fed_calendar"
+        if fed_calendar:
+            title = f"Federal Reserve meeting · relevance to {listing['ticker']}"
+            summary = f"The Federal Reserve calendar lists the FOMC meeting as {event['state']}, {time}."
+        elif calendar:
+            title = calendar["title"] + (f" · relevance to {listing['ticker']}" if not direct else "")
+            summary = f"{calendar['title']} is {event['state']}, {time}."
         if source["origin"] == "issuer_news":
-            summary = f"{listing['ticker']} published “{source['text']}” on {time}."
+            summary = f"{event_listing['ticker']} published “{source['text']}” on {time}."
         _claim(body, summary, source)
+        if calendar and direct:
+            body["relevance"] = calendar["relevance"]
+            _claim(body, "Relevance to the research listing: " + calendar["relevance"], source)
+            body["claims"][-1]["kind"] = "conditional_relevance"
+        if event["supersedes"] and event["state"] in ("cancelled", "postponed", "unknown"):
+            prior = _event(db, event["supersedes"], current=False)
+            prior_source = _get(db, event_listing, prior["source_ref"], current=False)
+            _claim(
+                body,
+                f"The prior edition showed {_time_span(prior)}. The current edition is {event['state']}.",
+                source,
+                prior_source,
+            )
+            body["next_observations"].append(
+                "Check the issuing calendar for a confirmed replacement or explicit cancellation before preparing against the earlier date."
+            )
         if not source.get("financial") and source["origin"] != "issuer_news":
             _claim(body, source["text"], source)
         if not evidence.still_supported(db, source, None):
@@ -503,27 +615,26 @@ def event_report(db, event_version_id, *, goal_id=None, objective="", focus=None
             )
         if source.get("financial") and evidence.supports_actual(source["financial"], listing["cik"]):
             _claim(body, f"The event source records {_fiscal_value(source)}.", source)
-        elif focus == "disclosure":
-            known = _numbers(db, listing, cutoff=min(now(), instant(source["received_at"])), limit=1)
+        disclosure_cutoff = min(now(), instant(source["available_at"]))
+        context_cutoff = disclosure_cutoff
+        if event["state"] == "occurred" and _boundary(event):
+            context_cutoff = min(context_cutoff, _boundary(event))
+        body["context_as_of"] = context_cutoff
+        if not source.get("financial") and focus == "disclosure":
+            known = _numbers(db, listing, cutoff=context_cutoff, limit=1)
             if known:
                 _claim(
                     body,
                     f"The latest reported financial context in the reviewed corpus was {_fiscal_value(known[0])}.",
                     known[0],
                 )
-        if earnings or focus == "expectations":
+        if direct and (earnings or focus == "expectations"):
             _expectations(db, event, listing, source, body)
             if earnings and event["state"] == "occurred":
-                _trend(db, listing, source, body)
-        if focus == "exposure" or "policy" in event["kind"]:
-            _exposures(db, listing, min(now(), _boundary(event) or now()), body)
-        if source.get("financial") and (focus == "disclosure" or earnings):
-            for note in evidence.source_context(db, source["document_id"], None):
-                if note["id"] == source["id"] or source["origin"] == "issuer_news":
-                    continue
-                p = _get(db, listing, note["id"], current=False)
-                _claim(body, "Qualification in the same disclosure: " + p["text"], p)
-                break
+                _trend(db, listing, source, body, cutoff=context_cutoff)
+        if approved or focus == "exposure" or "policy" in event["kind"]:
+            _exposures(db, listing, min(now(), _boundary(event) or now()), body, approved)
+        _qualifications(db, body, disclosure_cutoff)
         if event["kind"] == "monetary_policy_meeting":
             body["alternatives"].extend(
                 [
@@ -532,7 +643,7 @@ def event_report(db, event_version_id, *, goal_id=None, objective="", focus=None
                 ]
             )
             body["next_observations"].append(
-                "Compare the published FOMC statement and implementation note with the scheduled meeting."
+                "Compare the published policy statement and implementation note with the scheduled meeting."
             )
         if focus == "expectations":
             body["next_observations"].append(
@@ -596,9 +707,7 @@ def dossier(db, instrument_id):
         if latest:
             leading = next(iter(latest.values()))
             _trend(db, listing, leading, body)
-            for note in evidence.source_context(db, leading["document_id"], None)[:2]:
-                p = _get(db, listing, note["id"])
-                _claim(body, "The same disclosure qualifies the financial figures: " + p["text"], p)
+            _qualifications(db, body, now())
         _exposures(db, listing, now(), body)
         body["agenda"] = [
             {
@@ -771,6 +880,28 @@ def _unique_value(rows):
     return rows[0], ""
 
 
+def _eligible_close(exchange, day, closing, delay, available):
+    if datetime.fromisoformat(closing) + timedelta(seconds=delay) > datetime.fromisoformat(available):
+        return False
+    if exchange not in ("NASDAQ", "NYSE"):
+        return True
+    from . import goal_schedule
+
+    session = date.fromisoformat(day)
+    local = datetime.fromisoformat(closing).astimezone(goal_schedule.zone("America/New_York"))
+    if local.date() != session or session.weekday() >= 5:
+        return False
+    if session.year in goal_schedule.CLOSED:
+        slot = goal_schedule.occurrence(
+            session,
+            {"clock": "16:00", "cadence": "closing", "timezone": "America/New_York", "intent": "start_at"},
+        )
+        return bool(slot and closing == slot[1])
+    # Historical sessions outside the bundled calendar rely on the attributed
+    # file for holiday and early-close status. Still reject intraday quotations.
+    return local.hour in (13, 16) and local.minute == local.second == local.microsecond == 0
+
+
 def import_prices(db, instrument_id, publisher, series, text):
     if (
         not isinstance(publisher, str)
@@ -805,6 +936,8 @@ def import_prices(db, instrument_id, publisher, series, text):
                 )
             if not re.fullmatch(r"[0-9]{1,7}", row["delay_seconds"]):
                 raise ValueError("Specify the stated quote delay in seconds.")
+            if not _eligible_close(row["exchange"], day, close, int(row["delay_seconds"]), captured):
+                raise ValueError("Supply an eligible regular-session close available after its stated delay.")
             adjustment = row["adjustment"]
             if adjustment not in ("unadjusted", "split_adjusted", "total_return_adjusted"):
                 raise ValueError("Choose a recognized adjustment basis.")
@@ -904,14 +1037,14 @@ def _close(db, listing, day, cutoff=None):
                 or type(delay) is not int
                 or delay < 0
                 or f["session_end"][:10] != day
-                or close > p["available_at"]
+                or not _eligible_close(f["exchange"], day, close, delay, p["available_at"])
                 or adjusted not in ("unadjusted", "split_adjusted", "total_return_adjusted")
             ):
                 continue
             vintage = instant(f["adjustment_as_of"]) if adjusted != "unadjusted" else ""
             if vintage and (vintage < close or vintage > p["available_at"]):
                 continue
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, OverflowError):
             continue
         signature = (value, close, p["origin"], f.get("publisher"), f["series_id"], adjusted, vintage)
         choices.setdefault(signature, p)
@@ -955,11 +1088,124 @@ def _price_change(later, earlier):
         "difference": str(delta),
         "percent_change": pct,
         "session_window": [b["session_date"], a["session_date"]],
+        "baseline_period": b["session_date"],
+        "current_period": a["session_date"],
         "formula": "(later close - earlier close) / earlier close × 100",
         "input_ids": [later["id"], earlier["id"]],
         "version_ids": [later["document_id"], earlier["document_id"]],
         "warnings": [] if pct is not None else ["Near-zero starting price."],
     }
+
+
+def price_context(db, instrument_id, question, cutoff=None):
+    """Read an explicitly dated, single-listing close window without dispatching or saving work."""
+    if not isinstance(question, str) or not re.search(
+        r"\b(price|prices|close|closing|closed|return|returns|stock|shares)\b", question, re.IGNORECASE
+    ):
+        return None
+    dates = re.findall(r"(?<![\w-])\d{4}-\d{2}-\d{2}(?![\w-])", question)
+    if len(dates) != 2:
+        return None
+    try:
+        start, end = (_date(s) for s in dates)
+        if start >= end:
+            return None
+    except ValueError:
+        return None
+    cutoff = instant(cutoff) if cutoff else None
+    standalone = not db.in_transaction
+    if standalone:
+        db.execute("BEGIN")
+    try:
+        listing = universe.instrument(db, instrument_id)
+        symbol = listing["ticker"]
+        output = {
+            "status": "partial",
+            "instrument_id": instrument_id,
+            "ticker": symbol,
+            "start": start,
+            "end": end,
+            "cutoff": cutoff,
+            "passages": [],
+            "evidence_ids": [],
+            "calculation": None,
+            "gaps": [],
+            "warnings": [],
+        }
+        currencies = re.findall(r"\b(?:USD|EUR|GBP|CAD|AUD|CHF|JPY|CNY|HKD)\b", question, re.IGNORECASE)
+        if any(c.upper() != listing["currency"] for c in currencies) or any(
+            s in question for s in ("€", "£", "¥")
+        ):
+            output["gaps"].append(
+                "No currency-converted regular close is available for the requested window."
+            )
+            return output
+        for other in db.execute(
+            """SELECT i.ticker,c.name FROM instruments i LEFT JOIN companies c ON c.id=i.company_id
+                WHERE i.id<>? AND (i.company_id IS NULL OR i.company_id IS NOT ?) AND EXISTS
+                (SELECT 1 FROM source_memberships sm WHERE sm.instrument_id=i.id AND sm.status='active')""",
+            (instrument_id, listing["company_id"]),
+        ):
+            aliases = [
+                other["ticker"],
+                re.sub(r"\s+(corporation|corp\.?|inc\.?)$", "", other["name"] or "", flags=re.IGNORECASE),
+            ]
+            if any(x and re.search(r"\b" + re.escape(x) + r"\b", question, re.IGNORECASE) for x in aliases):
+                output["gaps"].append(
+                    "The question names another listing. Use the explicit benchmark selector to align both series."
+                )
+                return output
+        if re.search(
+            r"\b(intraday|premarket|after.hours|benchmark|relative to|versus|vs\.?|caused|why)\b",
+            question,
+            re.IGNORECASE,
+        ):
+            output["gaps"].append(
+                "The local price context covers one listing’s regular closes. The requested additional comparison, session or cause is unverified."
+            )
+        for day in dates:
+            p, reason = _close(db, listing, day, cutoff)
+            if not p:
+                output["gaps"].append(f"{symbol}, {day}: {reason}")
+                continue
+            output["passages"].append(p)
+            output["evidence_ids"].append(p["id"])
+        if any(p["origin"] == "operator_market_file" for p in output["passages"]):
+            output["warnings"].append(
+                "Prices and delay metadata are from the operator-supplied market file. Independent publisher verification is unavailable."
+            )
+        if len(output["passages"]) == 2:
+            a, b = output["passages"]
+            try:
+                change = _price_change(b, a)
+            except ValueError as exc:
+                output["gaps"].append(str(exc))
+            else:
+                query = re.sub("[-_]", " ", question.casefold())
+                bases = set(
+                    re.findall(
+                        r"\b(?:split adjusted|total return(?: adjusted)?|unadjusted|adjusted)\b", query
+                    )
+                )
+                basis = change["basis"].replace("_", " ")
+                if any(
+                    b == "adjusted"
+                    and basis == "unadjusted"
+                    or b != "adjusted"
+                    and (b if b != "total return" else "total return adjusted") != basis
+                    for b in bases
+                ):
+                    output["gaps"].append(
+                        "The retained adjustment basis differs from the requested price window."
+                    )
+                    return output
+                output["calculation"] = change
+                if not output["gaps"]:
+                    output["status"] = "ok"
+        return output
+    finally:
+        if standalone:
+            db.rollback()
 
 
 def price_window(db, instrument_id, start, end, benchmark_id=None):
@@ -1026,7 +1272,7 @@ def freeze_cohort(db, owner_id, metric, baseline_end, decision_at, outcome_end):
     cutoff = instant(decision_at)
     if metric not in METRICS or cutoff > now() or not baseline_end <= cutoff[:10] < outcome_end:
         raise ValueError("Declare a known decision time between the baseline and later outcome period end.")
-    if metric=="close_price" and cutoff[:10]!=baseline_end:
+    if metric == "close_price" and cutoff[:10] != baseline_end:
         raise ValueError("Use the decision time on the baseline close date for a prospective price window.")
     with write(db) as seq:
         universe.instrument(db, owner_id)
@@ -1162,8 +1408,10 @@ def evaluate_cohort(db, cohort_id):
             for key, v in normalized.items()
         }
         body["cohort"]["groups"] = groups
-        if any(c["origin"]=="operator_market_file" for c in body["citations"]):
-            body["gaps"].append("Market-session observations came from operator-supplied files. The desk has no independent publisher or entitlement verification for these closes.")
+        if any(c["origin"] == "operator_market_file" for c in body["citations"]):
+            body["gaps"].append(
+                "Market-session observations came from operator-supplied files. The desk has no independent publisher or entitlement verification for these closes."
+            )
         if missing:
             body["gaps"].append(f"{missing} enrolled listings have no usable outcome observation.")
         if not observed:

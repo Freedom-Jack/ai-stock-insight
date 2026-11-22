@@ -3,7 +3,7 @@
 import json
 import re
 
-from . import announcement_research, evidence, gaps, providers
+from . import announcement_research, evidence, gaps, price_research, providers
 from .db import is_fixture, now, uid, write
 from .research import authorized, encode, renew
 
@@ -93,7 +93,9 @@ class Bridge:
         # Access to an exact record requires the id to have been returned within
         # this run. Knowing an id from another question grants no read authority.
         rows = self.db.execute(
-            "SELECT output FROM receipts WHERE run_id=? AND status='ok'", (self.lease.run_id,)
+            """SELECT output FROM receipts WHERE run_id=?
+               AND (status='ok' OR (tool='price_context' AND status='partial'))""",
+            (self.lease.run_id,),
         )
         if passage_id not in self.context.get("source_updates",{}) and not any(
             passage_id in json.loads(row[0])["evidence_ids"] for row in rows
@@ -108,6 +110,9 @@ class Bridge:
         )
 
     def _perform(self, name, args):
+        if name == "price_context" and self.context.get("method") == price_research.METHOD:
+            window = price_research.window(self.db, self.context)
+            return window["status"], window, window["evidence_ids"]
         if name == "list_capabilities":
             return "ok", {"capabilities": self.catalog(), "providers": providers.capabilities()}, []
         if name in ("search_evidence", "next_evidence_page"):

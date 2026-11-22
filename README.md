@@ -8,7 +8,7 @@ Double-click **Start-StockInsight.cmd** or run the following from this checkout.
 .\Start-StockInsight.cmd
 ```
 
-Open **http://127.0.0.1:8765/today**. Sign in as `research` with the password printed in the terminal. The launcher opens your personal workspace at `%LOCALAPPDATA%\StockInsight\personal`. Use **Companies & themes** to enter an instrument list, then **Research** to ask a question. The installed on-device model selects a research procedure. The application acquires permitted public sources, checks the evidence and saves the brief.
+Open **http://127.0.0.1:8765/today**. Sign in as `research` with the password printed in the terminal. The launcher opens your personal workspace at `%LOCALAPPDATA%\StockInsight\personal`. Enter your instrument list under **Companies & themes**, then adopt a standing objective under **Goals**. Leave the launcher running. The desk checks eligible public sources, investigates relevant events and shows native Windows notifications even after you close the browser. Reopen the desk for reports, questions, journal notes or status.
 
 Use **Ctrl+C** in the terminal or **Status → Stop this desk** to stop. The same command reopens your saved research and schedules. For the isolated synthetic demo run `.\Start-StockInsight.cmd --demo` (port 8766). [First use, access, updates, backup and restore](docs/windows-trial.md)
 

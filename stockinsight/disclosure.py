@@ -104,7 +104,7 @@ class _Paragraphs(HTMLParser):
         ):
             return
         self.path.append((tag, state))
-        if len(self.path)>512:
+        if len(self.path) > 512:
             raise ValueError("The issuer page exceeds the supported disclosure nesting.")
         if state == "article" and tag in ("p", "li", "blockquote", "td"):
             self.flush()
@@ -196,11 +196,11 @@ def _locate(blocks, quote):
     count = 0
     index = None
     for i, block in enumerate(blocks):
-        offset=block.find(quote)
-        if offset>=0:
+        offset = block.find(quote)
+        if offset >= 0:
             index = i
-            count+=1
-            if block.find(quote,offset+1)>=0 or count>1:
+            count += 1
+            if block.find(quote, offset + 1) >= 0 or count > 1:
                 raise ValueError("Select an exact, unique excerpt from one issuer paragraph.")
     if count != 1:
         raise ValueError("Select an exact, unique excerpt from one issuer paragraph.")

@@ -54,7 +54,9 @@ class MethodsTests(unittest.TestCase):
         text = f"{metric} {value} {unit}" if period else (note or "Scheduled company calendar observation.")
         packet = [("/cell", text, time, fact)]
         if period and note:
-            packet.append(("/qualification", note, time, None))
+            for index, item in enumerate(note if isinstance(note, list) else [note]):
+                quote, available = item if isinstance(item, tuple) else (item, time)
+                packet.append((f"/qualification/{index:03}", quote, available, None))
         staged = evidence._stage(self.db, "full", json.dumps(packet).encode())
         with db.write(self.db) as seq:
             doc = evidence._save(
@@ -145,6 +147,70 @@ class MethodsTests(unittest.TestCase):
         self.db = db.connect(self.path)
         self.assertEqual(methods.export(self.db, preview["id"]), original_manifest)
         self.assertEqual(self.db.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_financial_qualifications_cover_each_edition_and_pin_event_era_evidence(self):
+        nv = self.items["NVDA"]["id"]
+        prior = self.source("NVDA", Q1, 90, stream="prior", note="Equipment deliveries were delayed.")
+        stamp = "2024-08-01T12:00:00Z"
+        actual = self.source(
+            "NVDA",
+            Q2,
+            100,
+            time=stamp,
+            note=[
+                "Contract pricing contributed to reported growth.",
+                "Currency translation offset part of the increase.",
+                ("Management added a later qualification.", "2024-08-20T10:00:00Z"),
+            ],
+        )
+        # A later restatement of an earlier fiscal period should appear only in today's dossier.
+        revised = self.source("NVDA", Q1, 80, stream="prior", time="2024-08-20T10:00:00Z")
+        event = events.append_event(
+            self.db,
+            nv,
+            kind="earnings_release",
+            source_ref=actual,
+            state="occurred",
+            precision="instant",
+            occurred_at=stamp,
+        )
+        post = methods.event_report(self.db, event["id"])
+        narrative = post["body"]["claims"]
+        for text in ("Contract pricing", "Currency translation", "Equipment deliveries"):
+            anchored = next(c for c in narrative if text in c["text"])
+            self.assertEqual(len(anchored["passage_ids"]), 2)
+        self.assertNotIn("later qualification", str(narrative))
+        self.assertIn(prior, post["body"]["calculations"][0]["input_ids"])
+        self.assertNotIn(revised, str(post))
+        self.assertEqual({x["reviewed"] for x in post["body"]["disclosure_coverage"]}, {1, 2})
+        publication = events.append_event(
+            self.db,
+            nv,
+            kind="issuer_update",
+            state="occurred",
+            precision="instant",
+            occurred_at=stamp,
+            source_ref=actual,
+        )
+        non_earnings = methods.event_report(self.db, publication["id"], focus="exposure")
+        self.assertIn("Currency translation", str(non_earnings["body"]["claims"]))
+        self.assertEqual(non_earnings["body"]["disclosure_coverage"][0]["reviewed"], 2)
+        dossier = methods.dossier(self.db, nv)
+        self.assertIn("later qualification", str(dossier["body"]["claims"]))
+        self.assertIn(revised, dossier["body"]["calculations"][0]["input_ids"])
+        self.assertNotIn(prior, str(dossier))
+        self.source(
+            "NVDA",
+            Q3,
+            110,
+            time="2024-10-10T12:00:00Z",
+            note=[f"Published operating context {n}." for n in range(19)],
+        )
+        large = methods.dossier(self.db, nv)["body"]
+        bounded = next(s for s in large["disclosure_coverage"] if s["unreviewed"])
+        self.assertEqual((bounded["reviewed"], bounded["unreviewed"]), (16, 3))
+        self.assertIn(bounded["source_ref"], str(large["gaps"]))
+        self.assertIn(bounded["document_id"], str(large["gaps"]))
 
     def test_dossier_peer_and_conditional_valuation_reject_wrong_basis(self):
         nv, ms = self.items["NVDA"]["id"], self.items["MSFT"]["id"]
@@ -240,6 +306,68 @@ class MethodsTests(unittest.TestCase):
         self.assertTrue(redirect.startswith("/methods?instrument_id=" + nv["id"] + "#report_"))
         self.assertTrue(methods.dashboard(self.db, nv["id"])["reports"])
 
+    def test_federal_reserve_range_source_and_cancellation_are_separate_from_listing_relevance(self):
+        nv, ms = self.items["NVDA"]["id"], self.items["MSFT"]["id"]
+        src = self.source("NVDA", origin="fed_calendar", note="The December FOMC meeting is tentative.")
+        meeting = events.append_event(
+            self.db,
+            nv,
+            kind="monetary_policy_meeting",
+            source_ref=src,
+            precision="day",
+            state="tentative",
+            scheduled_start="2026-12-08",
+            scheduled_end="2026-12-09",
+            source_timezone="America/New_York",
+        )
+        with db.write(self.db) as seq:
+            self.db.execute(
+                "INSERT INTO calendar_reports VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    nv,
+                    "fed_calendar",
+                    "dec-fomc",
+                    "Federal Reserve",
+                    src,
+                    meeting["event_id"],
+                    "signature",
+                    "FOMC meeting",
+                    "Rate expectations may affect equity valuations.",
+                    seq,
+                    seq,
+                ),
+            )
+        prepared = methods.event_report(self.db, meeting["id"], goal_id="local", request_key="dispatch")
+        self.assertEqual(prepared["title"], "Federal Reserve meeting · relevance to NVDA")
+        self.assertIn("tentative, 2026-12-08 through 2026-12-09", prepared["summary"])
+        self.assertIn("calendar-date precision, America/New_York", prepared["summary"])
+        self.assertNotIn("valuations", prepared["summary"])
+        self.assertTrue(any(c.get("kind") == "conditional_relevance" for c in prepared["body"]["claims"]))
+        with self.assertRaisesRegex(ValueError, "dispatch key"):
+            methods.event_report(
+                self.db, meeting["id"], goal_id="local", request_key="dispatch", instrument_id=ms
+            )
+        with self.assertRaisesRegex(ValueError, "approved relationship"):
+            methods.event_report(self.db, meeting["id"], instrument_id=ms)
+        change = self.source(
+            "NVDA", origin="fed_calendar", note="Calendar correction. The meeting is cancelled."
+        )
+        cancellation = events.append_event(
+            self.db,
+            nv,
+            kind="monetary_policy_meeting",
+            source_ref=change,
+            state="cancelled",
+            precision="unknown",
+            supersedes=meeting["id"],
+        )
+        updated = methods.event_report(self.db, cancellation["id"])
+        self.assertIn("cancelled", updated["summary"])
+        history = next(c for c in updated["body"]["claims"] if "prior edition" in c["text"])
+        self.assertIn("2026-12-08 through 2026-12-09", history["text"])
+        self.assertEqual({c["id"] for c in updated["body"]["citations"]}, {src, change})
+        self.assertEqual(methods.export(self.db, prepared["id"]), prepared)
+
     def test_market_import_window_benchmark_and_predecision_cohort_suppress_unknowns(self):
         nv, ms = self.items["NVDA"]["id"], self.items["MSFT"]["id"]
         header = ",".join(methods.PRICE_FIELDS) + "\n"
@@ -279,6 +407,20 @@ class MethodsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "vintage"):
             methods.import_prices(
                 self.db, nv, "Market control", "series", header + quote("NVDA", right, "99", "split_adjusted")
+            )
+        for invalid in (
+            quote("NVDA", "2024-04-06", "99"),
+            quote("NVDA", "2026-07-03", "99"),
+            quote("NVDA", right, "99").replace("T16:00", "T10:45"),
+        ):
+            with self.assertRaisesRegex(ValueError, "regular-session"):
+                methods.import_prices(self.db, nv, "Market control", "regular-close", header + invalid)
+        with (
+            patch.object(methods, "now", return_value="2024-04-15T20:00:05.000000Z"),
+            self.assertRaisesRegex(ValueError, "stated delay"),
+        ):
+            methods.import_prices(
+                self.db, nv, "Market control", "regular-close", header + quote("NVDA", right, "99", delay=15)
             )
         methods.import_prices(
             self.db, nv, "Other publisher", "different", header + quote("NVDA", right, "115")
@@ -379,3 +521,39 @@ class MethodsTests(unittest.TestCase):
             retained = json.loads(body)["body"]
             self.assertEqual(retained["citations"][0]["id"], ref)
             self.assertEqual(retained["calculations"][0]["scenarios"][1]["conditional_value"], "1500.00")
+            market_file = ",".join(methods.PRICE_FIELDS) + (
+                "\nNVDA,NASDAQ,2024-04-01,2024-04-01T16:00:00-04:00,USD,100,unadjusted,,15"
+                "\nNVDA,NASDAQ,2024-04-15,2024-04-15T16:00:00-04:00,USD,110,unadjusted,,15"
+            )
+            status, _, _ = read(
+                "/actions/method-price-import",
+                {
+                    "csrf": csrf,
+                    "instrument_id": listing,
+                    "publisher": "Synthetic USD quotes",
+                    "series": "regular",
+                    "rows": market_file,
+                },
+            )
+            self.assertEqual(status, 303)
+            fields = FormFields(read("/")[2]).values
+            status, case_url, _ = read(
+                "/actions/ask",
+                {
+                    **fields,
+                    "instrument_id": listing,
+                    "question": "How did NVDA’s closing price change from 2024-04-01 to 2024-04-15?",
+                },
+            )
+            self.assertEqual(status, 303)
+            status, _, case_html = read(case_url)
+            self.assertEqual(status, 200)
+            for phrase in (
+                "10%",
+                "2024-04-01",
+                "2024-04-15",
+                "unadjusted",
+                "Synthetic USD quotes",
+                "operator-supplied",
+            ):
+                self.assertIn(phrase, case_html)
