@@ -610,6 +610,11 @@ def render(context, selection, calls):
     ]
     for passage in qualifications:
         summaries.append(f"The source qualification or accompanying note reads “{passage['text']}”")
+    for ref,relation in context.get("source_updates",{}).items():
+        if ref not in ids or passages[ref]["financial"]:
+            raise ValueError("Read the linked primary-source qualification before revising this case")
+        summaries.append(f"The source passage flagged by the operator as {relation} reads “{passages[ref]['text']}”")
+        notes.append("Review how this disclosure affects the earlier interpretation. Its author and data date are recorded with the citation.")
     if financial_docs - {p["document_id"] for p in qualifications}:
         notes.append(
             "The retained financial cells establish the amounts. Review the full disclosure for qualifications before interpreting their cause."

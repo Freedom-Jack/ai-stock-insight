@@ -20,6 +20,7 @@ from .db import is_fixture, now, uid, write
 ISSUER_HOST = "nvidianews.nvidia.com"
 ISSUER_PATH = "/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2025"
 SEC_HOST = "data.sec.gov"
+MSFT_CDN_HOST = "cdn-dynmedia-1.microsoft.com"
 FISCAL_HOST = "api.fiscal.ai"
 SEC_TAG = "RevenueFromContractWithCustomerExcludingAssessedTax"
 _DNS_SLOTS = threading.BoundedSemaphore(4)
@@ -52,6 +53,8 @@ def _fiscal_key():
 
 
 def capabilities(conn=None):
+    from . import sources_calendar
+
     entries = [
         {
             "id": "issuer",
@@ -107,8 +110,42 @@ def capabilities(conn=None):
             "retention": "headline, official URL, publication timestamp and feed hash",
         },
     ]
+    entries.append(
+        {
+            "id": "sec_filing",
+            "provider": "SEC EDGAR",
+            "operation": "submissions.filed_8k",
+            "configured": bool(sec_contact()),
+            "coverage": "Latest qualifying 8-K or amendment among 250 recent forms; up to six narrative paragraphs.",
+            "source_url": "https://www.sec.gov/search-filings/edgar-application-programming-interfaces",
+            "requires": "Identified STOCKINSIGHT_SEC_CONTACT email",
+            "cadence": "One SEC request per second; host-wide cooldown and one-hour success cache.",
+            "retention": "Filed primary document, exact selected paragraphs and submissions index hash.",
+        }
+    )
+    for route, (host, path, title) in sources_calendar.ROUTES.items():
+        entries.append(
+            {
+                "id": route,
+                "provider": title,
+                "operation": route,
+                "configured": True,
+                "coverage": "Published annual shareholder meeting."
+                if route.startswith("msft_calendar")
+                else "Reported Q1 FY27 and Q1 FY26 GAAP revenue and outlook qualification."
+                if route == "msft_release"
+                else "Up to 20 CMA press releases per named Microsoft or NVIDIA query; only direct headline matches."
+                if route == "cma_news"
+                else "Optional CPI and employment release schedule with published times; local BLS access can be denied."
+                if route == "bls_calendar"
+                else "Regular US policy meetings on the Federal Reserve calendar for the current and following year.",
+                "source_url": "https://" + host + path,
+                "cadence": "One-hour success cache, publisher-wide retry and spacing.",
+                "retention": "Selected passages, published dates and source hash.",
+            }
+        )
     if conn is not None:
-        for entry in (e for e in entries if e["id"] in ("issuer", "issuer_news", "sec")):
+        for entry in (e for e in entries if e["id"] in sources_calendar.ROUTE_LABELS):
             row = conn.execute(
                 """SELECT id AS receipt_id,instrument_id,started_at,finished_at,status,document_id,retry_at
                    FROM source_checks WHERE provider=? ORDER BY started_at DESC LIMIT 1""",
@@ -185,7 +222,11 @@ def _retry_at(value):
 
 def _fetch(host, path, *, headers=None, limit=2_000_000):
     """No proxy, redirects or DNS re-resolution after address validation. TLS uses the original hostname."""
-    if host not in (ISSUER_HOST, SEC_HOST, FISCAL_HOST):
+    from .sources_calendar import MSFT_HOST, FED_HOST, CMA_HOST
+    from . import bls_calendar
+    from .filing_passages import ARCHIVE_HOST
+
+    if host not in (ISSUER_HOST, SEC_HOST, FISCAL_HOST, MSFT_HOST, FED_HOST, CMA_HOST, ARCHIVE_HOST, MSFT_CDN_HOST, bls_calendar.HOST):
         raise ValueError("Unsupported public source.")
     connection = HTTPSConnection(host, timeout=10)
     try:

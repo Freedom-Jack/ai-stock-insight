@@ -16,6 +16,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from . import model_sandbox
+
 ASSET_DIR = (
     Path(__file__).resolve().parent.parent / ".stockinsight" / "models" / "qwen2.5-0.5b"
 )
@@ -32,6 +34,9 @@ PLAN_EXAMPLES = {
     "reported_figures": "How did operating cash flow compare year over year?",
     "market_context": "Did the stock sell off after earnings despite beating estimates?",
     "issuer_disclosure": "What did the company disclose in its filing about management guidance?",
+    "disclosure": "What details did the company disclose in its official release?",
+    "expectations": "How did actual quarterly results compare to prior market expectations?",
+    "exposure": "Through what channel does this change affect the watched business?",
 }
 
 
@@ -156,14 +161,18 @@ def choose(question: str, candidates: dict[str, str]) -> tuple[str, dict]:
     grammar = "root ::= " + " | ".join(json.dumps(key) for key in candidates)
     started = time.monotonic()
     try:
-        if (
-            _sha(ASSET_DIR / ARCHIVE) != ARCHIVE_HASH
-            or _sha(ASSET_DIR / MODEL) != MODEL_HASH
-        ):
+        if _sha(ASSET_DIR / ARCHIVE) != ARCHIVE_HASH:
             raise LocalModelError("Local inference assets failed SHA-256 verification.")
         with tempfile.TemporaryDirectory(dir=ASSET_DIR) as temp:
             work = Path(temp)
             _unpack_runtime(work)
+            # The private package SID is granted access to this run only, never
+            # the assets directory, original weights or workspace.
+            shutil.copyfile(ASSET_DIR / MODEL, work / MODEL)
+            if _sha(work / MODEL) != MODEL_HASH:
+                raise LocalModelError(
+                    "Local inference assets failed SHA-256 verification."
+                )
             # No remote model host, inherited tokens, broker configuration or
             # operator-defined llama.cpp flags. The model emits one plan ID.
             system_root = os.environ["SystemRoot"]
@@ -178,7 +187,7 @@ def choose(question: str, candidates: dict[str, str]) -> tuple[str, dict]:
             command = [
                 str(work / "llama-completion.exe"),
                 "--model",
-                str(ASSET_DIR / MODEL),
+                str(work / MODEL),
                 "--offline",
                 "--gpu-layers",
                 "0",
@@ -203,21 +212,15 @@ def choose(question: str, candidates: dict[str, str]) -> tuple[str, dict]:
                 "--file",
                 str(prompt_file),
             ]
-            result = subprocess.run(
-                command,
-                check=False,
-                cwd=work,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                timeout=60,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
+            result = model_sandbox.run(command, cwd=work, env=env, timeout=60)
+            if result.returncode:
+                raise LocalModelError(
+                    f"The isolated CPU runtime exited with code 0x{result.returncode:08x}."
+                )
             selected = (
                 result.stdout.decode("ascii").strip().removesuffix(" [end of text]")
             )
-            if result.returncode or selected not in candidates:
+            if selected not in candidates:
                 raise LocalModelError(
                     "The local model did not return a permitted research method."
                 )
@@ -240,6 +243,7 @@ def choose(question: str, candidates: dict[str, str]) -> tuple[str, dict]:
         "runtime_version": BUILD,
         "runtime_sha256": ARCHIVE_HASH,
         "device": "CPU",
+        "isolation": "windows_appcontainer_no_capabilities",
         "billing_mode": "local_no_provider",
         "selected_plan": selected,
         "candidate_plans": list(candidates),

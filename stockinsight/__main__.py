@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import secrets
 import socket
 import sqlite3
@@ -10,7 +11,7 @@ import webbrowser
 from contextlib import closing
 from pathlib import Path
 
-from . import evidence, executor, local_research, providers, research, universe, workspace
+from . import evidence, executor, local_research, memory, providers, research, sources_calendar, universe, workspace
 from .db import connect, is_fixture
 
 EXAMPLE = Path(__file__).with_name("fixtures") / "training-list.csv"
@@ -102,7 +103,15 @@ def build_parser():
     file.add_argument("--complete", action="store_true", help="Declare this a full replacement snapshot")
     cap = actions.add_parser("capture")
     cap.add_argument("listing")
-    cap.add_argument("--provider", choices=("issuer", "sec"), default="issuer")
+    cap.add_argument("--provider", choices=tuple(sources_calendar.ROUTE_LABELS), default="issuer")
+    archive=actions.add_parser("export-case")
+    archive.add_argument("case_id")
+    archive.add_argument("file",type=Path)
+    history=actions.add_parser("import-research")
+    history.add_argument("listing")
+    history.add_argument("file",type=Path)
+    history.add_argument("--kind",choices=("case","conversation"),required=True)
+    history.add_argument("--title",default="")
     lookup = actions.add_parser("passages")
     lookup.add_argument("listing")
     lookup.add_argument("--query")
@@ -128,6 +137,16 @@ def operate(db, args):
     name = args.action
     if name == "demo":
         return demo(db)
+    if name=="export-case":
+        data=json.dumps(memory.export_case(db,args.case_id),ensure_ascii=False,separators=(",",":"))
+        with args.file.open("x",encoding="utf-8") as output:
+            output.write(data)
+        return 0
+    if name=="import-research":
+        if not args.file.is_file() or args.file.stat().st_size>memory.LIMIT:
+            raise ValueError("Select a bounded JSON research file")
+        print(memory.import_record(db,select(db,args.listing)["id"],args.file.read_text(encoding="utf-8-sig"),args.kind,args.title))
+        return 0
     if name == "import-list":
         result = universe.import_file(db, args.file, complete=args.complete, source_id=args.source)
         display(result)
@@ -235,6 +254,7 @@ def main(argv=None):
         import uvicorn
 
         code = secrets.token_urlsafe(24)
+        os.environ["STOCKINSIGHT_DESK_PORT"] = str(args.port)
         url = f"http://127.0.0.1:{args.port}"
         with closing(socket.socket()) as listener:
             listener.bind(("127.0.0.1", args.port))

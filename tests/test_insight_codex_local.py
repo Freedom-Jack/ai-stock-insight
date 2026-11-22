@@ -128,7 +128,6 @@ class CpuSelector(unittest.TestCase):
             self.assertNotIn(question, command)
             self.assertNotIn("OPENAI_API_KEY", kwargs["env"])
             self.assertNotIn("LLAMA_ARG_MODEL_URL", kwargs["env"])
-            self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
             self.assertFalse(kwargs.get("shell", False))
             prompt = Path(command[command.index("--file") + 1]).read_text(
                 encoding="utf-8"
@@ -160,10 +159,11 @@ class CpuSelector(unittest.TestCase):
                 side_effect=[local_model.ARCHIVE_HASH, local_model.MODEL_HASH],
             ),
             patch.object(local_model, "_unpack_runtime"),
+            patch.object(local_model.shutil, "copyfile"),
             patch.object(
                 local_model.urllib.request, "urlopen", side_effect=AssertionError
             ),
-            patch.object(local_model.subprocess, "run", side_effect=run),
+            patch.object(local_model.model_sandbox, "run", side_effect=run),
         ):
             selected, metadata = local_model.choose(question, self.plans)
         self.assertEqual(selected, "earnings")
@@ -192,8 +192,9 @@ class CpuSelector(unittest.TestCase):
                 side_effect=[local_model.ARCHIVE_HASH, local_model.MODEL_HASH],
             ),
             patch.object(local_model, "_unpack_runtime"),
+            patch.object(local_model.shutil, "copyfile"),
             patch.object(
-                local_model.subprocess,
+                local_model.model_sandbox,
                 "run",
                 return_value=subprocess.CompletedProcess([], 0, b"shell"),
             ),

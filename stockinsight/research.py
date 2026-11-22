@@ -159,7 +159,7 @@ def _deadline(seconds):
 
 def claim(db, job_id, execution_secret, request_id):
     """Called by the trusted dispatcher. The worker never chooses its identity."""
-    from . import announcement_research
+    from . import announcement_research, memory
 
     with write(db) as seq:
         job = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
@@ -203,6 +203,8 @@ def claim(db, job_id, execution_secret, request_id):
             "case_id": case["id"],
             "question": case["question"],
             "required_checks": required_checks(case["question"]),
+            "source_updates": memory.attachments(db,case["id"],job["base_revision"],case["cutoff"]),
+            "prior_research": memory.recall(db,item["id"]),
         }
         run_id, generation = uid("run"), job["generation"] + 1
         lease = _lease(execution_secret, run_id, generation)
@@ -443,6 +445,7 @@ def run_job(db, job_id, *, engine="responses"):
             from . import local_research
 
             runtime = {"adapter": engine, "billing_mode": "local_no_provider_charges"}
+            bridge.financial_documents = context["method"] == METHOD
             result = local_research.execute(context, bridge.call, on_device=engine == "device", runtime=runtime)
         elif fixture or engine == "responses":
             if not fixture:

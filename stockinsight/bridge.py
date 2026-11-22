@@ -73,6 +73,7 @@ PARAMETERS = {
 class Bridge:
     def __init__(self, db, lease):
         self.db = db
+        self.financial_documents = False
         self.lease = lease
         self.context = json.loads(authorized(db, lease)["context"])
         self.fixture = is_fixture(db)
@@ -94,7 +95,9 @@ class Bridge:
         rows = self.db.execute(
             "SELECT output FROM receipts WHERE run_id=? AND status='ok'", (self.lease.run_id,)
         )
-        if not any(passage_id in json.loads(row[0])["evidence_ids"] for row in rows):
+        if passage_id not in self.context.get("source_updates",{}) and not any(
+            passage_id in json.loads(row[0])["evidence_ids"] for row in rows
+        ):
             raise ValueError("Passage outside the run read-set")
         return evidence.get(
             self.db,
@@ -127,6 +130,7 @@ class Bridge:
                 fixture=self.fixture,
                 commit_seq=watermark,
                 origin="issuer_news" if self.context.get("method") == announcement_research.METHOD else None,
+                financial_documents=self.financial_documents,
                 limit=SEARCH_LIMIT + 1,
                 offset=(page - 1) * SEARCH_LIMIT,
             )
@@ -173,7 +177,7 @@ class Bridge:
                 continue
             if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,96}", value):
                 raise ValueError("Invalid tool parameter")
-            if key == "provider" and value not in ("issuer", "sec", "issuer_news"):
+            if key == "provider" and value not in ("issuer", "sec", "issuer_news", "msft_release"):
                 raise ValueError("Source route unavailable")
         count = self.db.execute(
             "SELECT count(*) FROM receipts WHERE run_id=?", (self.lease.run_id,)

@@ -6,7 +6,7 @@ import sqlite3
 from contextlib import closing
 from datetime import date, datetime, timedelta
 
-from . import events, evidence, issuer_news, providers, universe
+from . import events, evidence, issuer_news, providers, sources_calendar, universe
 from .db import connect, instant, is_fixture, now, uid, write
 
 SCHEMA = """
@@ -113,33 +113,31 @@ def _age(db, schedule, stamp, *, catch_up):
     )
 
 
-def configure(db, instrument_id, provider, interval_minutes, enabled, *, at=None):
+_ANY_SCHEDULE = object()
+
+
+def configure(db, instrument_id, provider, interval_minutes, enabled, *, at=None, expected_id=_ANY_SCHEDULE, goal_managed=False):
     if (
-        provider not in ("issuer", "issuer_news", "sec")
+        provider not in sources_calendar.ROUTE_LABELS
         or type(enabled) is not bool
+        or type(goal_managed) is not bool
         or interval_minutes not in INTERVALS
     ):
         raise ValueError("Choose a named source and supported interval.")
     stamp = instant(at or now())
     with write(db) as seq:
         listing = universe.instrument(db, instrument_id, active=enabled)
-        if (
-            enabled
-            and not is_fixture(db)
-            and (
-                not listing["cik"]
-                or (
-                    provider in ("issuer", "issuer_news")
-                    and listing["cik"] != "0001045810"
-                )
-            )
-        ):
+        if enabled and not is_fixture(db) and not sources_calendar.eligible(listing, provider):
             raise ValueError("Choose a resolved issuer with this source route.")
         old = db.execute(
             "SELECT * FROM monitor_schedules WHERE instrument_id=? AND provider=? AND superseded_at IS NULL",
             (instrument_id, provider),
         ).fetchone()
+        if expected_id is not _ANY_SCHEDULE and expected_id != (old["id"] if old else None):
+            raise ValueError("The active source schedule changed.")
         if old:
+            if goal_managed and not db.execute("SELECT 1 FROM goal_auto_sources WHERE schedule_id=?", (old["id"],)).fetchone():
+                raise ValueError("This source schedule belongs to the operator.")
             if (old["interval_minutes"], bool(old["enabled"])) == (
                 interval_minutes,
                 enabled,
@@ -170,6 +168,8 @@ def configure(db, instrument_id, provider, interval_minutes, enabled, *, at=None
                 seq,
             ),
         ).lastrowid
+        if goal_managed:
+            db.execute("INSERT INTO goal_auto_sources(schedule_id) VALUES(?)",(version,))
         if enabled:
             _expand(
                 db,
@@ -226,7 +226,9 @@ def _claim(db, stamp):
 def _capture(db, listing, provider):
     if not is_fixture(db):
         return evidence.capture_public(db, listing, provider=provider)
-    rows = evidence.search(db, listing["id"], fixture=True)
+    rows = evidence.search(
+        db, listing["id"], fixture=True, origin=provider if provider in sources_calendar.ROUTES or provider=="sec_filing" else None
+    )
     return {
         "status": "ok" if rows else "unavailable",
         "document_id": rows[0]["document_id"] if rows else None,
@@ -241,6 +243,9 @@ def _observe(db, listing, provider, doc_id):
     if provider == "issuer_news":
         issuer_news.observe(db, listing["id"], doc_id)
         return
+    if provider in sources_calendar.CALENDARS or provider == "cma_news":
+        sources_calendar.observe(db, listing["id"], provider, doc_id)
+        return
     rows = db.execute(
         """SELECT p.id,p.financial,d.origin,d.published_at,d.source_url FROM evidence_passages p
            JOIN documents d ON d.id=p.document_id WHERE d.id=? AND d.instrument_id=? ORDER BY p.locator,p.id""",
@@ -248,7 +253,9 @@ def _observe(db, listing, provider, doc_id):
     )
     seen = set()
     for row in rows:
-        if row["origin"] == "issuer" and provider == "issuer":
+        if row["origin"] == provider and provider == "sec_filing":
+            kind, day, accession = "filed_disclosure", row["published_at"], None
+        elif row["origin"] == provider and provider in ("issuer", "msft_release"):
             kind, day, accession = "earnings_release", row["published_at"], None
         elif row["origin"] == "sec" and provider == "sec":
             fact = json.loads(row["financial"] or "{}")
@@ -282,7 +289,42 @@ def _observe(db, listing, provider, doc_id):
             )
 
 
-def tick(db, *, at=None):
+def _retry_check(db, occurrence, finished, result):
+    schedule = db.execute(
+        """SELECT s.id FROM monitor_schedules s JOIN monitor_occurrences o ON s.id=o.schedule_id
+                            WHERE o.id=? AND s.enabled=1 AND s.superseded_at IS NULL""",
+        (occurrence["id"],),
+    ).fetchone()
+    if not schedule:
+        return
+    previous = db.execute(
+        "SELECT original_id,attempt FROM source_retries WHERE occurrence_id=?", (occurrence["id"],)
+    ).fetchone()
+    root, attempt = (previous[0], previous[1] + 1) if previous else (occurrence["id"], 1)
+    if attempt > 2:
+        return
+    when = max(
+        instant(result["retry_at"]) if result.get("retry_at") else _stamp(finished, timedelta(minutes=1)),
+        _stamp(finished, timedelta(seconds=1)),
+    )
+    scheduled = db.execute(
+        """SELECT min(scheduled_at) FROM monitor_occurrences WHERE schedule_id=?
+                          AND status='pending' AND kind='scheduled'""",
+        (schedule["id"],),
+    ).fetchone()[0]
+    if scheduled and scheduled <= when:
+        return
+    retry = uid("occ")
+    created = db.execute(
+        """INSERT INTO monitor_occurrences(id,schedule_id,scheduled_at,kind,status,detail)
+                         VALUES(?,?,?,'catch_up','pending','Retry after source cooldown.') ON CONFLICT DO NOTHING""",
+        (retry, schedule["id"], when),
+    ).rowcount
+    if created:
+        db.execute("INSERT INTO source_retries VALUES(?,?,?)", (retry, root, attempt))
+
+
+def tick(db, *, at=None, detail=False):
     stamp = instant(at or now())
     occurrence = _claim(db, stamp)
     if not occurrence:
@@ -315,21 +357,36 @@ def tick(db, *, at=None):
                 finished,
             ),
         ).rowcount
-    return state if changed else None
+        if changed and (result["status"] == "rate_limited" or result.get("retry_at")):
+            _retry_check(db, occurrence, finished, result)
+    if not changed:
+        return None
+    if detail:
+        row = db.execute(
+            """SELECT o.*,s.instrument_id,s.provider FROM monitor_occurrences o JOIN monitor_schedules s
+                          ON s.id=o.schedule_id WHERE o.id=?""",
+            (occurrence["id"],),
+        ).fetchone()
+        return dict(row)
+    return state
 
 
 def run_foreground(path, stop_event):
-    """Only the private app process runs this loop; SQLite arbitrates overlapping foreground workers."""
+    """Run bounded source, investigation and notification operations on the foreground owner's connection."""
+    from . import delivery, memory, proactive, server_profile
+
     with closing(connect(path)) as db:
         while not stop_event.is_set():
-            try:
-                work = tick(db)
-            except sqlite3.Error:
-                logging.getLogger(__name__).exception(
-                    "Foreground monitor database unavailable"
-                )
-                work = None
-            stop_event.wait(2 if work else 15)
+            busy = False
+            for task in (delivery.tick, tick, proactive.tick, memory.tick):
+                if stop_event.is_set():
+                    break
+                try:
+                    busy = bool(task(db)) or busy
+                except (OSError, sqlite3.Error, ValueError):
+                    logging.getLogger(__name__).error("Foreground operation failed: %s.%s", task.__module__,task.__name__)
+            server_profile.pulse(db)
+            stop_event.wait(2 if busy else 10)
 
 
 def _text(data, key, limit):
@@ -340,7 +397,11 @@ def _text(data, key, limit):
 
 
 def action(db, action, data):
-    if action == "monitor-configure":
+    if action == "monitor-relate":
+        sources_calendar.compare_reports(
+            db, data.get("left", ""), data.get("right", ""), data.get("judgment"), data.get("reason")
+        )
+    elif action == "monitor-configure":
         if data.get("enabled") not in ("0", "1"):
             raise ValueError("Choose whether to enable the schedule.")
         configure(
@@ -400,12 +461,12 @@ def dashboard(db, *, at=None):
            ORDER BY p.scheduled_day DESC,p.id"""
     )
     sourced = """SELECT e.event_id AS id,e.instrument_id,i.ticker,i.raw_label,
-           CASE WHEN d.origin='issuer_news' THEN p.text ELSE e.kind END AS title,e.kind,e.state,
+           CASE WHEN d.origin='issuer_news' THEN p.text WHEN r.title IS NOT NULL THEN r.title ELSE e.kind END AS title,e.kind,e.state,
            e.scheduled_start,e.scheduled_end,e.occurred_at,e.precision,e.source_ref,d.title AS provenance,
-           CASE WHEN d.origin='issuer_news' THEN json_extract(p.locator,'$.link') ELSE d.source_url END AS source_url,
-           d.version_hash,p.text AS excerpt,d.received_at FROM event_versions e
+           CASE WHEN d.origin IN ('issuer_news','cma_news') THEN json_extract(p.locator,'$.link') ELSE d.source_url END AS source_url,
+           r.relevance AS source_relevance,e.source_timezone,d.version_hash,p.text AS excerpt,d.received_at FROM event_versions e
            JOIN instruments i ON i.id=e.instrument_id JOIN evidence_passages p ON p.id=e.source_ref
-           JOIN documents d ON d.id=p.document_id WHERE NOT EXISTS(
+           JOIN documents d ON d.id=p.document_id LEFT JOIN calendar_reports r ON r.source_ref=e.source_ref WHERE NOT EXISTS(
                SELECT 1 FROM event_versions newer WHERE newer.event_id=e.event_id AND newer.commit_seq>e.commit_seq)
            AND EXISTS(SELECT 1 FROM source_memberships m WHERE m.instrument_id=i.id AND m.status='active')"""
     upcoming = [p for p in plans if p["day"] >= stamp[:10]]
@@ -421,13 +482,20 @@ def dashboard(db, *, at=None):
     for observation in upcoming:
         if "day" not in observation:
             observation["day"] = observation["scheduled_start"]
-            observation["relevance"] = (
+            observation["relevance"] = observation["source_relevance"] or (
                 f"Named source for {observation['ticker'] or observation['raw_label']}."
             )
     upcoming.sort(key=lambda v: (v["day"] is None, v["day"] or "", v["id"]))
     recent = rows(
         sourced
         + " ORDER BY coalesce(e.occurred_at,e.scheduled_start,'') DESC,e.commit_seq DESC LIMIT 60"
+    )
+    active_listings = universe.universe(db)["instruments"]
+    publications = rows(
+        """SELECT p.id,p.text,i.ticker,d.title FROM evidence_passages p JOIN documents d ON d.id=p.document_id
+                      JOIN instruments i ON i.id=d.instrument_id WHERE d.fixture=? AND EXISTS(SELECT 1 FROM source_memberships m
+                      WHERE m.instrument_id=i.id AND m.status='active') ORDER BY d.commit_seq DESC,p.locator LIMIT 100""",
+        (is_fixture(db),),
     )
     return {
         "schedules": schedules,
@@ -438,4 +506,15 @@ def dashboard(db, *, at=None):
         "past_plans": [p for p in plans if p["day"] < stamp[:10]][:30],
         "intervals": INTERVALS,
         "sec_ready": bool(providers.sec_contact()),
+        "reports": sources_calendar.coverage(db),
+        "publications": publications,
+        "comparisons": sources_calendar.report_comparisons(db),
+        "routes": [
+            {
+                "id": k,
+                "label": label,
+                "items": [i for i in active_listings if is_fixture(db) or sources_calendar.eligible(i, k)],
+            }
+            for k, label in sources_calendar.ROUTE_LABELS.items()
+        ],
     }

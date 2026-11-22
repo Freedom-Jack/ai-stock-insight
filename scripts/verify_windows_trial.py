@@ -1,6 +1,9 @@
 """Opt-in live smoke: launch the Windows trial in a NEW workspace and exercise public research in Edge."""
 
 import argparse
+import base64
+import http.client
+import re
 import json
 import socket
 import sqlite3
@@ -20,7 +23,7 @@ NEWS_QUESTION = "Which NVIDIA press releases are in the saved feed?"
 
 
 @contextmanager
-def desk(browser, root, *, demo=False):
+def launcher(root, *, demo=False):
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
@@ -49,7 +52,7 @@ def desk(browser, root, *, demo=False):
         lines.put(None)
 
     Thread(target=read_terminal, daemon=True).start()
-    context = None
+    password = None
     try:
         deadline = monotonic() + 60
         while True:
@@ -61,25 +64,22 @@ def desk(browser, root, *, demo=False):
             if line.startswith("Terminal password: "):
                 password = line.partition(": ")[2].strip()
                 break
-        context = browser.new_context(
-            viewport={"width": 1200, "height": 900},
-            http_credentials={
-                "origin": origin,
-                "username": "research",
-                "password": password,
-            },
-        )
-        page = context.new_page()
-        page.set_default_timeout(90000)
-        yield origin, page
+        yield origin, password
     finally:
         try:
-            if context:
-                stop = context.new_page()
-                stop.goto(origin + "/status", timeout=15000)
-                stop.get_by_text("Stop this desk", exact=True).click()
-                stop.get_by_role("button", name="Stop Stock Insight").click()
-                context.close()
+            if password and process.poll() is None:
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+                auth = "Basic " + base64.b64encode(("research:" + password).encode()).decode()
+                try:
+                    connection.request("GET", "/status", headers={"Authorization": auth})
+                    raw = connection.getresponse().read().decode()
+                    csrf = re.search(r'name="csrf" value="([A-Za-z0-9_-]+)"', raw)[1]
+                    connection.request("POST", "/actions/stop", "confirm=yes&csrf=" + csrf, {
+                        "Authorization": auth, "Origin": origin,
+                        "Content-Type": "application/x-www-form-urlencoded"})
+                    connection.getresponse().read()
+                finally:
+                    connection.close()
             if process.wait(timeout=35):
                 raise RuntimeError("The trial exited with an error")
         finally:
@@ -90,6 +90,19 @@ def desk(browser, root, *, demo=False):
                     check=False,
                 )
             process.stdout.close()
+
+
+@contextmanager
+def desk(browser, root, *, demo=False):
+    with launcher(root, demo=demo) as (origin, password):
+        context = browser.new_context(viewport={"width":1200,"height":900},
+            http_credentials={"origin":origin,"username":"research","password":password})
+        try:
+            page = context.new_page()
+            page.set_default_timeout(90000)
+            yield origin, page
+        finally:
+            context.close()
 
 
 def main():

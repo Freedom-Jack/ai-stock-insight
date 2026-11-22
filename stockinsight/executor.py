@@ -70,7 +70,7 @@ _FUNCTIONS = {
     "get_evidence": ("Read one exact permitted passage from the case evidence.", _object({"id": TEXT})),
     "capture_public": (
         "Collect the approved public source for this listing and archive its version.",
-        _object({"provider": {"type": "string", "enum": ["issuer", "sec", "issuer_news"]}}),
+        _object({"provider": {"type": "string", "enum": ["issuer", "sec", "issuer_news", "msft_release"]}}),
     ),
     "compare_financials": (
         "Compute a compatible period trend from two observed passage IDs.",
@@ -428,6 +428,10 @@ def _fixture(question, context, call):
             check(
                 "record_gap", {"metric": metric, "period": period, "attempt_receipt_id": search["receipt_id"]}
             )
+    for ref in context.get("source_updates",{}):
+        if ref not in ids:
+            check("get_evidence", {"id":ref})
+            ids.append(ref)
     pair_covers_question = not intent.periods or intent.trend or len(intent.periods) >= 2
     if len(observations) >= 2 and pair_covers_question and not any(m == "revenue" for m, _ in missing):
         outcome = check(

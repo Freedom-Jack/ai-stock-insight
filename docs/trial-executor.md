@@ -20,7 +20,27 @@ The model publisher and runtime project provide the pinned artifacts. [Qwen mode
 
 `verify` performs real offline inference with the installed weights. It asks one financial comparison question, one stock-price question and one issuer-disclosure question, and reports the selected method and elapsed time for each. Three correct choices exercise this small control set. Accuracy on arbitrary questions is unmeasured.
 
-Inference checks the model and runtime digests again, extracts the local completion executable and its CPU libraries, and runs it in offline mode with deterministic sampling and a 60-second timeout. Its grammar permits only the supplied plan IDs. The prompt contains the question and worked examples. The subprocess receives a minimal Windows environment, and the model has no application credentials or operating-system tools. Temporary runtime and prompt files are removed after the subprocess exits. Stock Insight records the actual selected method, model revision, digests, runtime version and timing. Public-source acquisition runs in the host application and may require internet access.
+Each inference stages the verified model, CPU libraries, executable and prompt into its own scratch directory. Allow about 650 MB of free temporary storage in addition to the installed assets. The process starts suspended in a fresh Windows AppContainer. Stock Insight checks the actual process token and requires zero capability SIDs before resuming it. The Windows package receives read/execute access to its own scratch files and inherits only three standard input/output handles. The model runs offline with deterministic sampling, a 60-second timeout and a grammar restricted to the application's method IDs. It receives no provider credentials. The service collects public sources separately. A failed isolation check stops the model attempt.
+
+From a normal Windows user session, run the following against the intended private workspace directory.
+
+```powershell
+.\.venv\Scripts\python.exe -m stockinsight.model_access --workspace .stockinsight
+```
+
+The check uses a signed Windows reader and disposable files. On the trial machine the reader could open the allowed input. The OS denied reads of the synthetic private SQLite database, provider credential marker and unrelated file, including the extended Windows path spelling. Their bytes were unchanged. The process token reported AppContainer membership and zero capabilities. A standard AppContainer may read machine resources deliberately made available to all Windows application packages. Workspace permissions remain relevant. No WSL distribution was available to verify WSL interoperability. [Windows AppContainer isolation](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)
+
+## Windows user-session notifications
+
+A saved goal can generate a private generic Windows popup while the desk's browser is closed. The foreground desk must remain running in the signed-in user's unlocked session. The popup shows **Open report** and **Dismiss**. Its private URL uses the running desk's loopback port. The account and ticker stay out of the external message.
+
+Workspace status lists the research report, delivery attempt, provider acceptance, confirmed Windows display when observable, and an explicit report-open request as separate records. Human reading and explicit brief review have their own evidence. A known failure retries with backoff. An ambiguous acknowledgement waits for explicit operator confirmation before a resend.
+
+```powershell
+.\.venv\Scripts\python.exe -m stockinsight.delivery_check
+```
+
+This opt-in check sends one generic popup from a disposable workspace. On November 22, 2026 at 02:30:35 UTC, a separate observer process confirmed the test window on the active input desktop in session 1. The native window measured 335 by 156 pixels and its centre was unobscured. No browser was launched and no open request was recorded. The test provides no evidence that the user read it. To check a recent report notice while its popup is still displayed, use `--workspace PATH --notice-id ID`. That mode sends nothing. [Windows desktop visibility](https://learn.microsoft.com/en-us/windows/win32/winstation/desktops) · [Window visibility API](https://learn.microsoft.com/en-us/windows/desktop/api/winuser/nf-winuser-iswindowvisible)
 
 ## ChatGPT subscription check
 

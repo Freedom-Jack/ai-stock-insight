@@ -39,12 +39,14 @@
     {% if p.retention=='full' %}<a href="/sources/{{ p.instrument_id }}/{{ p.document_id }}">Download retained version</a>{% endif %}</details>
 {% endmacro %}
 <header><strong>Stock Insight</strong><nav aria-label="Research desk">
-{% for name,link,label in [('today','/today','Today'),('research','/','Research'),('universe','/universe','Companies & themes'),('monitor','/monitor','Events & monitoring'),('upcoming','/upcoming','Upcoming research'),('journal','/journal','Journal'),('status','/status','Status')] %}
+{% for name,link,label in [('today','/today','Today'),('goals','/goals','Goals'),('research','/','Research'),('universe','/universe','Companies & themes'),('monitor','/monitor','Events & monitoring'),('upcoming','/upcoming','Upcoming research'),('journal','/journal','Journal'),('status','/status','Status')] %}
 <a href="{{ link }}"{% if view==name %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav></header>
 <main>
 {% if fixture %}<span class="flag">Fixture workspace · synthetic evidence</span>{% endif %}
 {% if view=='today' %}
   <h1>Today</h1>
+  {% if not goals.plans %}<p><a href="/goals">Adopt a standing research goal</a> to receive updates for your watchlist.</p>{% endif %}
+  {% for r in goals.reports if r.state=='complete' and not r.reviewed_at %}{% if loop.index<=6 %}<p><a href="/goals/reports/{{ r.id }}">{{ r.title or r.objective }}</a> · {{ r.ended_at }}</p>{% endif %}{% endfor %}
   {% if not universe.instruments %}<div class="box"><h2>Start your watchlist</h2><p>Add the listings you want to investigate and monitor.</p><a href="/universe">Set up companies &amp; themes</a></div>{% endif %}
   <div class="panel"><section><h2>Research to review</h2>
     {% for b in unread %}<p>{{ b.ticker }} · Revision {{ b.revision }}<br><a href="/cases/{{ b.case_id }}">{{ b.question }}</a></p>
@@ -54,10 +56,14 @@
   <section><h2>Planned research and reviews</h2>{% for n in journal.upcoming[:8] %}<p>{{ n.ticker or n.raw_label }} · {{ n.review_on or 'Unscheduled' }}<br><a href="/journal#{{ n.id }}">{{ n.body }}</a></p>
     {% else %}<p>No pending questions or review conditions.</p>{% endfor %}<a href="/upcoming">Open upcoming research</a></section>
   {% if monitor.events %}<section><h2>Recent watchlist events</h2>{% for e in monitor.events[:5] %}<p><small>{{ e.ticker or e.raw_label }} · {{ (e.occurred_at or e.scheduled_start or 'Date unknown')[:10] }}</small><br><a href="/monitor">{{ e.title | replace('_', ' ') }}</a></p>{% endfor %}</section>{% endif %}
+{% elif view=='goals' %}{% include 'goals.html' %}
+{% elif view=='goal_report' %}{% include 'goal_report.html' %}
+{% elif view=='methods' %}{% include 'methods.html' %}
 {% elif view=='monitor' %}{% include 'monitor.html' %}
 {% elif view in ('journal','upcoming') %}{% include 'journal.html' %}
 {% elif view=='research' %}
   <h1>Research desk</h1>
+  <p><a href="/methods">Financial and event research methods</a></p>
   {% if universe.instruments %}
     <form class="box" method="post" action="/actions/ask">{{ token() }}<input type="hidden" name="key" value="{{ request_key }}">
       <label>Listing <select name="instrument_id">{% for i in universe.instruments %}<option value="{{ i.id }}">{{ listing(i) }}</option>{% endfor %}</select></label>
@@ -72,6 +78,7 @@
 {% elif view=='case' %}
   <small>{{ listing(case.instrument) }} · {{ case.jobs[0].state }}</small>
   <h1>{{ case.question }}</h1>
+  <p><a href="/cases/{{ case.id }}/export" download>Export this case and its citations</a></p>
   {% if case.cutoff %}<p>Public-information reconstruction through {{ case.cutoff }}</p>{% endif %}
   {% for brief in case.briefs %}
     <article><small>Revision {{ brief.revision }} · {{ brief.body.status }} · Analysis frozen {{ brief.as_of }}</small>
@@ -107,6 +114,7 @@
   <section><h2>Investigation history</h2>{% for j in case.jobs %}<p>{{ j.created_at }} · <strong>{{ j.state }}</strong> {{ j.detail }}</p>
     {% if j.state in ('ready','leased') %}<form method="post" action="/actions/run">{{ token() }}<input type="hidden" name="job" value="{{ j.id }}">{{ engine() }}<button>Run or recover job</button></form>{% endif %}
   {% endfor %}<form method="post" action="/actions/continue">{{ token() }}<input type="hidden" name="case" value="{{ case.id }}"><input type="hidden" name="key" value="{{ request_key }}"><input type="hidden" name="base_revision" value="{{ case.revision }}">{{ engine() }}<button>Investigate again</button></form></section>
+  {% include 'case_memory.html' %}
   {% include 'case_notes.html' %}
 {% elif view=='universe' %}
   <h1>Companies &amp; themes</h1>
@@ -128,12 +136,28 @@
 {% elif view=='company' %}
   <small>{{ listing(instrument) }} · {{ instrument.resolution_status }}</small><h1>{{ instrument.company_name or instrument.raw_label }}</h1>
   {% if not fixture %}<form method="post" action="/actions/capture">{{ token() }}<input type="hidden" name="instrument_id" value="{{ instrument.id }}">
-    <select aria-label="Public source" name="provider"><option value="issuer">NVIDIA Q2 FY2025 release</option><option value="sec">SEC quarterly revenue</option></select> <button>Capture public source</button></form>
+    <select aria-label="Public source" name="provider">{% for key,label in public_routes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select> <button>Capture public source</button></form>
     {% if request.query_params.get('capture') %}<p>Capture {{ request.query_params.get('capture') }}</p>{% endif %}{% endif %}
   <h2>Source passages</h2>{% for p in passages %}<section>{{ sources(p) }}</section>{% else %}<p>No eligible versions saved.</p>{% endfor %}
   <h2>Questions</h2>{% for c in cases %}<p><a href="/cases/{{ c.id }}">{{ c.question }}</a></p>{% else %}<p>No saved questions.</p>{% endfor %}
+  <h2>Selected research history</h2>{% for r in imported %}<p><a href="/memory/{{ r.id }}">{{ r.title }}</a> · {{ r.kind }}</p>{% endfor %}
+  <details><summary>Import a case or selected conversation</summary><form method="post" action="/actions/memory-import">{{ token() }}<input type="hidden" name="listing" value="{{ instrument.id }}">
+  <label>Format <select name="kind"><option value="conversation">Selected conversation</option><option value="case">Portable case</option></select></label>
+  <label>Conversation title <input name="title" maxlength="180"></label><label>Research JSON <textarea name="raw" rows="5" required></textarea></label>
+  <p>For a selected conversation, paste a list of messages with role (user or assistant) and content. Earlier statements retain their authorship. Only source-backed evidence can support a new claim.</p>
+  <button>Import selected research</button></form></details>
+{% elif view=='memory' %}
+  <p><a href="/companies/{{ record.instrument_id }}">Back to company</a></p><h1>{{ record.title }}</h1><small>Imported {{ record.imported_at }} · {{ record.kind }}</small>
+  {% if record.kind=='conversation' %}{% for m in record.payload %}<article><strong>{{ m.role | capitalize }}</strong><p>{{ m.content }}</p></article>{% endfor %}
+  {% else %}{% for r in record.payload.case.revisions %}<article><h2>Archived revision {{ r.revision }}</h2><p>{{ r.body.conclusion }}</p><p>{{ r.method }} · {{ r.as_of }}</p>{% for s in r.sources %}<p>{{ s.title }} · {{ s.locator }}<br>{{ s.text }}</p>{% endfor %}</article>{% endfor %}{% endif %}
 {% elif view=='status' %}
   <h1>Workspace status</h1><h2>Investigator</h2>
+  <section><h2>External notifications</h2><p>{{ delivery.channel }} · {{ 'enabled' if delivery.enabled else 'disabled' }} · {{ 'available' if delivery.available else 'unavailable' }}</p>
+  <form method="post" action="/actions/delivery-configure">{{ token() }}<input type="hidden" name="enabled" value="{{ '0' if delivery.enabled else '1' }}"><button>{{ 'Disable' if delivery.enabled else 'Enable' }} notifications</button></form>
+  <form method="post" action="/actions/delivery-test">{{ token() }}<input type="hidden" name="key" value="{{ request_key }}"><button>Send a test notice</button></form>
+  {% for n in delivery.notices %}<p>{{ n.created_at }} · {{ n.state }} · <a href="{{ n.report_path }}">{{ n.title }}</a></p>
+  {% if n.state in ('failed','uncertain') %}<form method="post" action="/actions/delivery-retry">{{ token() }}<input type="hidden" name="id" value="{{ n.id }}">{% if n.state=='uncertain' %}<label><input name="confirm" value="1" type="checkbox" required> An earlier notice may have been delivered.</label>{% endif %}<button>Retry delivery</button></form>{% endif %}{% endfor %}
+  <details><summary>Delivery attempts</summary>{% for a in delivery.attempts %}<p>{{ a.started_at }} · {{ a.outcome }} · {{ a.detail or '' }}</p>{% endfor %}</details></section>
   {% if fixture %}<p>Offline fixture driver. Model requests per run: 0.</p>{% endif %}
   {% if not fixture %}<p>Local financial research tools are connected. The on-device model is {{ 'installed' if device_ready else 'unavailable' }}. The trial sends no hosted-model requests.</p>{% endif %}
   <p><a href="/monitor">Foreground monitoring</a> runs while the desk is open in its terminal.</p>

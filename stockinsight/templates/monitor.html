@@ -4,9 +4,9 @@
   <h2>Upcoming events and plans</h2>
   {% for e in monitor.upcoming %}
     <article>
-      <strong>{{ e.day or 'Date unknown' }} · {{ e.title | replace('_',' ') }}</strong>
+      <strong>{{ e.day or 'Date unknown' }}{% if e.scheduled_end and e.scheduled_end != e.day %} through {{ e.scheduled_end }}{% endif %} · {{ e.title | replace('_',' ') }}</strong>
       <p><a href="/companies/{{ e.instrument_id }}">{{ e.ticker or e.raw_label }}</a> · {{ e.relevance }}</p>
-      <small>{{ e.provenance }}{% if e.state %} · {{ e.state }}{% endif %}</small>
+      <small>{{ e.provenance }}{% if e.state %} · {{ e.state }} · {{ e.precision }} precision{% if e.source_timezone %} · publisher timezone {{ e.source_timezone }}{% endif %}{% endif %}</small>
     </article>
   {% else %}<p>No upcoming observations or plans for the active watchlist.</p>{% endfor %}
   {% if universe.instruments %}
@@ -24,8 +24,8 @@
 <section>
   <h2>Source checks</h2>
   {% if fixture %}<p>This workspace checks saved synthetic passages.</p>
-  {% else %}<p>The NVIDIA Newsroom feed checks current press releases. The historical route checks NVIDIA’s Q2 FY25 release. The SEC route checks filed quarterly revenue for a resolved issuer.
-    {% if not monitor.sec_ready %}The SEC route needs an identified contact in the desk environment.{% endif %}</p>{% endif %}
+  {% else %}<p>Company and policy calendars show the publisher’s date precision. The UK regulator search checks the 20 newest matching releases and retains directly named issuer headlines. The source menu shows eligible listings.
+    {% if not monitor.sec_ready %}SEC filings and reported revenue need an identified contact in the desk environment.{% endif %}</p>{% endif %}
   {% for s in monitor.schedules %}
     <article><strong>{{ s.ticker or s.raw_label }} · {{ s.provider | upper }}</strong>
       <span>{{ 'Enabled' if s.enabled else 'Disabled' }} · every {{ s.interval_minutes }} minutes{% if not s.active_listing %} · outside active membership{% endif %}</span>
@@ -38,21 +38,19 @@
   {% else %}<p>Source checks are off until you enable a schedule.</p>{% endfor %}
   {% if universe.instruments %}
     <details><summary>Set a check schedule</summary>
-      {% for route, label in [('issuer_news','NVIDIA Newsroom press releases'), ('issuer', 'NVIDIA historical issuer release'), ('sec', 'SEC quarterly revenue')] %}
-      {% set options = namespace(items=[]) %}
-      {% for i in universe.instruments %}{% if fixture or (i.cik and (route=='sec' or i.cik=='0001045810')) %}{% set options.items = options.items + [i] %}{% endif %}{% endfor %}
-      {% if options.items %}
+      {% for route in monitor.routes %}
+      {% if route['items'] %}
       <form method="post" action="/actions/monitor-configure">{{ token() }}
-        <fieldset><legend>{{ label }}</legend>
-        <input type="hidden" name="provider" value="{{ route }}">
-        <label>Listing <select name="instrument_id">{% for i in options.items %}<option value="{{ i.id }}">{{ listing(i) }}</option>{% endfor %}</select></label>
+        <fieldset><legend>{{ route.label }}</legend>
+        <input type="hidden" name="provider" value="{{ route.id }}">
+        <label>Listing <select name="instrument_id">{% for i in route['items'] %}<option value="{{ i.id }}">{{ listing(i) }}</option>{% endfor %}</select></label>
         <label>Interval <select name="interval_minutes">
           {% for duration in monitor.intervals %}<option value="{{ duration }}"{% if duration==1440 %} selected{% endif %}>{{ duration // 60 }} hours</option>{% endfor %}
         </select></label>
         <input type="hidden" name="enabled" value="1"><button>Save and enable checks</button>
         </fieldset>
       </form>
-      {% else %}<p>No resolved watchlist listing is eligible for {{ label }}.</p>{% endif %}
+      {% else %}<p>No resolved watchlist listing is eligible for {{ route.label }}.</p>{% endif %}
       {% endfor %}
     </details>
   {% endif %}
@@ -69,6 +67,24 @@
     </article>
   {% else %}<p>No foreground checks have run.</p>{% endfor %}
 </section>
+{% if monitor.reports %}<section><h2>Compared source reports</h2>
+  {% for report in monitor.reports %}<article><strong>{{ report.ticker }} · {{ report.title }}</strong>
+    <p>{{ report.reports|length }} publications · {{ report.origin_count }} original source group{% if report.origin_count!=1 %}s{% endif %}.
+      {% if report.disagreement %}Published accounts disagree. Check the publisher's current calendar before preparing.{% else %}Published observations agree.{% endif %}</p>
+    {% for item in report.reports %}<p><a href="{{ item.source_url }}" rel="noreferrer">{{ item.publication }}</a> · {{ item.origin_group }} · {{ item.display_state }} · {{ item.display_date }}</p>{% endfor %}
+  </article>{% endfor %}</section>{% endif %}
+{% if monitor.publications|length>1 %}<section><h2>Source comparison</h2>
+  <details><summary>Compare two saved reports</summary>
+    <form method="post" action="/actions/monitor-relate">{{ token() }}
+      {% for key,title in [('left','First passage'),('right','Second passage')] %}<label>{{ title }} <select name="{{ key }}">{% for p in monitor.publications %}
+        <option value="{{ p.id }}">{{ p.ticker }} · {{ p.title }} · {{ p.text|truncate(85) }}</option>{% endfor %}</select></label>{% endfor %}
+      <label>Your reading <select name="judgment"><option value="same_account">Report the same development</option><option value="disagree">Disagree about the development</option><option value="different_subjects">Unrelated developments</option></select></label>
+      <label>Relevance and reason <input name="reason" maxlength="500" required></label><button>Save comparison</button></form>
+  </details>
+  {% for c in monitor.comparisons %}<article><strong>{{ c.sources[0].ticker }} · {{ {'same_account':'Same development','disagree':'Disagreement','different_subjects':'Unrelated developments'}[c.judgment] }}</strong>
+    <p>Your reading · {{ c.observed_at }} · {{ c.reason }}</p><p>Original reporting groups · {{ c.origins | join(', ') }}{% if c.unknown_origin %} · attribution unknown{% endif %}</p>
+    {% for s in c.sources %}<details><summary>{{ s.title }}</summary><blockquote>{{ s.text }}</blockquote><small>Source version {{ s.version_hash }} · captured {{ s.received_at }}</small></details>{% endfor %}</article>{% endfor %}
+</section>{% endif %}
 <section>
   <h2>Watchlist event observations</h2>
   {% for e in monitor.events %}

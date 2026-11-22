@@ -1,5 +1,6 @@
 """Append-only sourced event observations and local commit-boundary replay."""
 
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 import re
 
@@ -64,6 +65,7 @@ def append_event(
     occurred_at=None,
     source_timezone=None,
     supersedes=None,
+    _commit_seq=None,
 ):
     """Save one complete edition. Revisions name the version the caller observed."""
     if not isinstance(kind, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", kind):
@@ -97,7 +99,9 @@ def append_event(
             raise ValueError("Supply the source timezone for an interval with changing offsets.")
         source_timezone = offsets.pop()
     observation = (instrument_id, kind, state, source_ref, precision, start, end, actual, source_timezone)
-    with write(conn) as seq:
+    if _commit_seq is not None and not conn.in_transaction:
+        raise ValueError("An existing event transaction is required.")
+    with write(conn) if _commit_seq is None else nullcontext(_commit_seq) as seq:
         universe.instrument(conn, instrument_id)
         evidence.get(conn, instrument_id, source_ref, fixture=is_fixture(conn))
         if supersedes is None:

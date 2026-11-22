@@ -35,7 +35,7 @@ class LauncherWorkspaceTests(unittest.TestCase):
                         conn.execute("SELECT max(version) FROM migrations").fetchone()[
                             0
                         ],
-                        3,
+                        len(db.migrations()),
                     )
                 return 0
 

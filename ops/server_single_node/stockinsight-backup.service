@@ -1,0 +1,19 @@
+[Unit]
+Description=Verified Stock Insight backup to a dedicated mounted volume
+RequiresMountsFor=/mnt/stockinsight-backup
+ConditionPathIsMountPoint=/mnt/stockinsight-backup
+
+[Service]
+Type=oneshot
+User=stockinsight
+Group=stockinsight
+WorkingDirectory=/opt/stockinsight
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/stockinsight/.venv/bin/python -m stockinsight.server_profile backup /mnt/stockinsight-backup
+ProtectSystem=strict
+ReadWritePaths=/mnt/stockinsight-backup
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+UMask=0077
+TimeoutStartSec=10min

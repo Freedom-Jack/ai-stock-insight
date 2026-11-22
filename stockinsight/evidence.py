@@ -323,11 +323,33 @@ FROM evidence_passages p JOIN documents d ON p.document_id=d.id
 """
 
 
-def _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=None, query=None, limit=50, offset=0, origin=None):
+def _read(
+    conn,
+    instrument_id,
+    cutoff,
+    fixture,
+    commit_seq,
+    passage_id=None,
+    query=None,
+    limit=50,
+    offset=0,
+    origin=None,
+    financial_documents=False,
+):
     if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or offset < 0:
         raise ValueError("Invalid evidence search window.")
     conditions = ["d.instrument_id=?"]
     args = [instrument_id]
+    if financial_documents:
+        if cutoff:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM evidence_passages f WHERE f.document_id=d.id AND f.financial IS NOT NULL AND f.available_at<=?)"
+            )
+            args.append(utc(cutoff))
+        else:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM evidence_passages f WHERE f.document_id=d.id AND f.financial IS NOT NULL)"
+            )
     if origin is not None:
         conditions.append("d.origin=?")
         args.append(origin)
@@ -381,9 +403,30 @@ def _read(conn, instrument_id, cutoff, fixture, commit_seq, passage_id=None, que
 
 
 def search(
-    conn, instrument_id, cutoff=None, *, query=None, fixture=None, commit_seq=None, limit=50, offset=0, origin=None
+    conn,
+    instrument_id,
+    cutoff=None,
+    *,
+    query=None,
+    fixture=None,
+    commit_seq=None,
+    limit=50,
+    offset=0,
+    origin=None,
+    financial_documents=False,
 ):
-    return _read(conn, instrument_id, cutoff, fixture, commit_seq, query=query, limit=limit, offset=offset, origin=origin)
+    return _read(
+        conn,
+        instrument_id,
+        cutoff,
+        fixture,
+        commit_seq,
+        query=query,
+        limit=limit,
+        offset=offset,
+        origin=origin,
+        financial_documents=financial_documents,
+    )
 
 
 def source_context(conn, document_id, cutoff):
@@ -681,8 +724,60 @@ def _sec_rows(raw, received, cik):
     return rows
 
 
+def claim_public(conn, instrument_id, provider, host):
+    """Claim one bounded publisher access slot shared by all registered routes on that host."""
+    from . import sources_calendar
+    from .universe import instrument
+
+    if is_fixture(conn):
+        raise ValueError("A public source requires an ordinary workspace.")
+    routes_by_host = {
+        providers.ISSUER_HOST: ["issuer", "issuer_news", "nvda_excerpt"],
+        providers.SEC_HOST: ["sec", "sec_filing"],
+        sources_calendar.MSFT_HOST: ["msft_excerpt"],
+        providers.MSFT_CDN_HOST: ["msft_transcript"],
+    }
+    for name, (hostname, _, _) in sources_calendar.ROUTES.items():
+        routes_by_host.setdefault(hostname, []).append(name)
+    routes = routes_by_host.get(host, [])
+    if provider not in routes:
+        raise ValueError("Choose a registered provider and publisher host.")
+    with write(conn) as seq:
+        instrument(conn,instrument_id)
+        # The source route identifies the cached document and the receipt. The
+        # publisher's hostname determines who must observe a transport cooldown.
+        started = utc(now())
+        stamp = datetime.fromisoformat(started)
+        minute_ago = utc((stamp - timedelta(minutes=1)).isoformat())
+        placeholders = ",".join("?" for _ in routes)
+        bounds = conn.execute(
+            f"""SELECT max(retry_at), max(CASE WHEN provider='sec_filing' THEN coalesce(finished_at,started_at) ELSE started_at END),
+                max(CASE WHEN status='running' THEN started_at END)
+                FROM source_checks WHERE provider IN ({placeholders}) AND (retry_at>? OR started_at>? OR finished_at>?)""",
+            (*routes, started, minute_ago, minute_ago),
+        ).fetchone()
+        deadline, latest_start, in_flight = bounds
+        if latest_start:
+            spacing = utc((datetime.fromisoformat(latest_start) + timedelta(seconds=1)).isoformat())
+            deadline = max(deadline or "", spacing)
+        if (deadline and deadline > started) or (in_flight and in_flight > minute_ago):
+            return {
+                "status": "rate_limited",
+                "message": "An in-progress check or source retry deadline is active.",
+                "retry_at": deadline if deadline and deadline > started else None,
+                "evidence_ids": [],
+            }
+        check_id = uid("check")
+        conn.execute(
+            """INSERT INTO source_checks(id,instrument_id,provider,started_at,status,commit_seq)
+                        VALUES (?,?,?,?,'running',?)""",
+            (check_id, instrument_id, provider, started, seq),
+        )
+    return {"receipt_id":check_id}
+
+
 def capture_public(conn, instrument, provider="issuer"):
-    from . import issuer_news
+    from . import filing_passages, issuer_news, sources_calendar
     from .universe import instrument as lookup
 
     if is_fixture(conn):
@@ -709,7 +804,20 @@ def capture_public(conn, instrument, provider="issuer"):
         host, path = providers.ISSUER_HOST, issuer_news.PATH
         title = "NVIDIA Newsroom press releases"
         retention, published, precision = "rss_metadata_and_hash", None, "publisher timestamps per item"
-    elif provider == "sec":
+    elif provider in sources_calendar.ROUTES and sources_calendar.eligible(identity, provider):
+        host, path, title = sources_calendar.ROUTES[provider]
+        if provider == "cma_news":
+            path += {sources_calendar.MICROSOFT: "Microsoft", sources_calendar.NVIDIA: "NVIDIA"}[cik]
+        retention = (
+            "calendar_observations_and_hash"
+            if provider in sources_calendar.CALENDARS
+            else "selected_cells_and_hash"
+        )
+        if provider == "cma_news":
+            retention = "regulator_headlines_and_hash"
+        published = "2026-10-28" if provider == "msft_release" else None
+        precision = "day (publisher)" if published else "publisher precision per event"
+    elif provider in ("sec", "sec_filing"):
         contact = providers.sec_contact()
         if not contact:
             return {
@@ -722,6 +830,10 @@ def capture_public(conn, instrument, provider="issuer"):
         path = f"/api/xbrl/companyconcept/CIK{cik}/us-gaap/{providers.SEC_TAG}.json"
         title = "SEC EDGAR reported revenue · " + identity["ticker"]
         retention, published, precision = "full", None, "filing dates per fact"
+        if provider == "sec_filing":
+            path = f"/submissions/CIK{cik}.json"
+            title = "SEC filed 8-K passages · " + identity["ticker"]
+            precision = "day (SEC filing index)"
     else:
         return {"status": "unsupported", "message": "No matching named issuer source.", "evidence_ids": []}
     url = f"https://{host}{path}"
@@ -753,51 +865,41 @@ def capture_public(conn, instrument, provider="issuer"):
                 "message": "Using the last successful source check.",
                 "evidence_ids": ids,
             }
-    with write(conn) as seq:
-        # The source route identifies the cached document and the receipt. The
-        # publisher's hostname determines who must observe a transport cooldown.
-        started = utc(now())
-        stamp = datetime.fromisoformat(started)
-        minute_ago = utc((stamp - timedelta(minutes=1)).isoformat())
-        routes = ("issuer", "issuer_news") if host == providers.ISSUER_HOST else ("sec",)
-        placeholders = ",".join("?" for _ in routes)
-        bounds = conn.execute(
-            f"""SELECT max(retry_at), max(started_at), max(CASE WHEN status='running' THEN started_at END)
-                FROM source_checks WHERE provider IN ({placeholders}) AND (retry_at>? OR started_at>?)""",
-            (*routes, started, minute_ago),
-        ).fetchone()
-        deadline, latest_start, in_flight = bounds
-        if latest_start:
-            spacing = utc((datetime.fromisoformat(latest_start) + timedelta(seconds=1)).isoformat())
-            deadline = max(deadline or "", spacing)
-        if (deadline and deadline > started) or (in_flight and in_flight > minute_ago):
-            return {
-                "status": "rate_limited",
-                "message": "An in-progress check or source retry deadline is active.",
-                "retry_at": deadline if deadline and deadline > started else None,
-                "evidence_ids": [],
-            }
-        check_id = uid("check")
-        conn.execute(
-            """INSERT INTO source_checks(id,instrument_id,provider,started_at,status,commit_seq)
-                        VALUES (?,?,?,?,'running',?)""",
-            (check_id, instrument_id, provider, started, seq),
-        )
+    claim = claim_public(conn, instrument_id, provider, host)
+    if "receipt_id" not in claim:
+        return claim
+    check_id = claim["receipt_id"]
     status, message, document_id, ids, retry_at = "ok", "Dated public facts captured.", None, [], None
     try:
         options = {"limit": issuer_news.MAX_BYTES} if provider == "issuer_news" else {}
-        raw = providers._fetch(host, path, headers=headers, **options)
-        received = utc(now())
-        if provider == "issuer_news":
+        if provider == "sec_filing":
+            raw, rows, received, url, published = filing_passages.fetch(path, cik, headers)
+        else:
+            raw = providers._fetch(host, path, headers=headers, **options)
+            received = utc(now())
+        if provider == "sec_filing":
+            message = f"Retained {len(rows)} passages from SEC filed items."
+        elif provider == "issuer_news":
             rows = issuer_news.rows(raw, received)
             if not rows:
                 raise providers.SourceError("partial", "The feed returned no qualifying issuer announcements.")
             message = f"Read {len(rows)} dated issuer announcements."
+        elif provider in sources_calendar.ROUTES:
+            rows = sources_calendar.rows(provider, raw, received, cik=cik)
+            if not rows and provider != "cma_news":
+                raise providers.SourceError(
+                    "partial", "No recognizable observations in the named source edition."
+                )
+            message = (
+                f"Read {len(rows)} observations from {title}."
+                if rows
+                else "No directly named issuer headline in the 20 checked regulator results."
+            )
         elif provider == "issuer":
             rows = _issuer_rows(raw, received)
         else:
             rows = _sec_rows(raw, received, cik)
-        if not rows:
+        if not rows and provider != "cma_news":
             raise providers.SourceError(
                 "partial", "No qualifying reported standalone quarterly USD facts in the response."
             )
@@ -811,6 +913,11 @@ def capture_public(conn, instrument, provider="issuer"):
         except ValueError as exc:
             status, message = "error", str(exc)
     with write(conn) as seq:
+        if status == "ok":
+            try:
+                lookup(conn,instrument_id)
+            except ValueError:
+                status, message = "unavailable", "The listing left the active watchlist during this source check."
         if status == "ok":
             document_id = _save(
                 conn,
@@ -830,6 +937,8 @@ def capture_public(conn, instrument, provider="issuer"):
                 r[0]
                 for r in conn.execute("SELECT id FROM evidence_passages WHERE document_id=?", (document_id,))
             ]
+            if provider in sources_calendar.CALENDARS or provider == "cma_news":
+                sources_calendar.observe(conn,instrument_id,provider,document_id,_commit_seq=seq)
         conn.execute(
             """UPDATE source_checks SET finished_at=?,status=?,detail=?,document_id=?,retry_at=?,commit_seq=? WHERE id=?""",
             (utc(now()), status, message, document_id, retry_at, seq, check_id),

@@ -1,0 +1,43 @@
+[Unit]
+Description=Private Stock Insight desk and single foreground scheduler
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=stockinsight
+Group=stockinsight
+WorkingDirectory=/opt/stockinsight
+StateDirectory=stockinsight
+StateDirectoryMode=0700
+Environment=STOCKINSIGHT_PROFILE=server_single_node
+Environment=STOCKINSIGHT_DESK_PORT=8765
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/etc/stockinsight/desk.env
+UnsetEnvironment=OPENAI_API_KEY STOCKINSIGHT_OPENAI_API_KEY STOCKINSIGHT_API_BILLING STOCKINSIGHT_HEARTBEAT_URL
+ExecStartPre=/opt/stockinsight/.venv/bin/python -m stockinsight.server_profile guard
+ExecStart=/opt/stockinsight/.venv/bin/python -u -m stockinsight --data-dir /var/lib/stockinsight/workspace serve --port 8765
+Restart=on-failure
+RestartSec=8
+TimeoutStopSec=90
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+TasksMax=96
+MemoryMax=2G
+CPUQuota=150%
+StandardOutput=append:/var/lib/stockinsight/desk.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

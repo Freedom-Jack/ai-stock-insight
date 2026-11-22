@@ -1,0 +1,17 @@
+<p><a href="/goals">Standing goals</a> · {{ report.kind }} · {{ report.body.status }}</p><h1>{{ report.body.title }}</h1>
+<p class="meta">{{ report.objective }} · Finished {{ report.ended_at }}</p><p>{{ report.body.summary }}</p>
+{% if report.reason %}<h2>Why this reached you</h2><p>{{ report.reason }}</p>{% endif %}
+{% if method %}<h2>Evidence and interpretation</h2>
+{% for c in method.body.claims %}<p>{{ c.text }}</p>{% endfor %}
+{% for c in method.body.citations %}<details><summary>{{ c.title }} · {{ c.published_at or c.available_at }}</summary><blockquote>{{ c.text }}</blockquote>
+{% if c.url and c.url.startswith('https://') %}<a href="{{ c.url }}" rel="noreferrer">Original source</a>{% endif %}<p class="meta">Captured {{ c.received_at }} · {{ c.locator }}<br>Version <code>{{ c.version_hash }}</code></p></details>{% endfor %}
+<h2>Alternatives and gaps</h2>{% for s in method.body.alternatives+method.body.gaps %}<p>{{ s }}</p>{% endfor %}
+<p><a href="/methods?instrument_id={{ report.instrument_id }}#{{ method.id }}">Full method, calculations and revisions</a></p>
+{% endif %}
+{% if report.body.coverage is defined %}<h2>Coverage</h2><p>{{ report.body.interval | join(' to ') }} · {{ report.body.missed }} missed obligations</p>
+{% for c in report.body.coverage %}<p>{{ c.ticker }} · {{ c.provider }} · {{ c.state }}{% if c.receipt %} · {{ c.receipt.finished_at }} · <code>{{ c.receipt.id }}</code>{% endif %}</p>{% else %}<p>No eligible watchlist source was checked.</p>{% endfor %}
+{% for r in report.body.reports %}<p><a href="/goals/reports/{{ r.id }}">{{ r.title }}</a></p>{% endfor %}{% endif %}
+{% if report.context_reads %}<h2>Earlier questions revisited</h2>{% for f in report.context_reads %}<p><a href="/goals/reports/{{ f.report_id }}">{{ f.question }}</a></p>{% endfor %}{% endif %}
+{% if report.followups %}<h2>Next observations</h2>{% for f in report.followups %}<p>{{ f.question }}</p>{% endfor %}{% endif %}
+<details><summary>Execution details</summary><pre>{{ report.runtime | tojson(indent=2) }}</pre><code>{{ report.id }}</code></details>
+{% if report.reviewed_at %}<p>Reviewed {{ report.reviewed_at }}</p>{% else %}<form method="post" action="/actions/goal-review">{{ token() }}<input type="hidden" name="report" value="{{ report.id }}"><button>Mark report reviewed</button></form>{% endif %}

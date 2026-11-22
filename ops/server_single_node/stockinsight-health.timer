@@ -1,0 +1,10 @@
+[Unit]
+Description=Two-minute Stock Insight liveness checks
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=120s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

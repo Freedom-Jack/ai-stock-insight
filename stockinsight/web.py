@@ -9,11 +9,11 @@ from threading import Event, Thread
 from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from . import evidence, journal, local_research, monitor, providers, research, universe, workspace
+from . import delivery, evidence, goals, journal, local_research, memory, methods, monitor, ownership, providers, research, sources_calendar, universe, workspace
 from .db import connect, is_fixture, uid
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).with_name("templates"))
@@ -29,12 +29,13 @@ def application(path, port, login_code, *, request_stop=None):
     async def foreground(app):
         stop = Event()
         worker = Thread(target=monitor.run_foreground, args=(path, stop), daemon=True)
-        worker.start()
-        try:
-            yield
-        finally:
-            stop.set()
-            await run_in_threadpool(worker.join, 30)
+        with ownership.scheduler(path):
+            worker.start()
+            try:
+                yield
+            finally:
+                stop.set()
+                await run_in_threadpool(worker.join)
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=foreground)
     host = f"127.0.0.1:{port}"
@@ -124,13 +125,35 @@ def application(path, port, login_code, *, request_stop=None):
                    JOIN cases c ON c.id=b.case_id JOIN instruments i ON i.id=c.instrument_id
                    WHERE n.reviewed_at IS NULL ORDER BY b.commit_seq DESC LIMIT 25"""
             ).fetchall()
-            return page(req, db, "today", unread=unread, journal=journal.dashboard(db),
+            return page(req, db, "today", unread=unread, goals=goals.dashboard(db), journal=journal.dashboard(db),
                         monitor=monitor.dashboard(db), universe=universe.universe(db))
 
     @app.get("/monitor")
     def monitoring(req: Request):
         with closing(connect(path)) as db:
             return page(req, db, "monitor", monitor=monitor.dashboard(db), universe=universe.universe(db))
+
+    @app.get("/goals")
+    def standing(req: Request):
+        with closing(connect(path)) as db:
+            return page(req, db, "goals", goals=goals.dashboard(db), universe=universe.universe(db))
+
+    @app.get("/goals/reports/{report_id}")
+    def alert_report(req: Request, report_id: str):
+        with closing(connect(path)) as db:
+            result = goals.report(db,report_id)
+            method = methods.export(db,result["method_report"]) if result["method_report"] else None
+            return page(req,db,"goal_report",report=result,method=method)
+
+    @app.get("/methods")
+    def workbench(req: Request, instrument_id: str | None = None):
+        with closing(connect(path)) as db:
+            return page(req,db,"methods",methods=methods.dashboard(db,instrument_id),universe=universe.universe(db))
+
+    @app.get("/methods/reports/{report_id}.json")
+    def method_export(report_id: str):
+        with closing(connect(path)) as db:
+            return JSONResponse(methods.export(db,report_id),headers={"Content-Disposition":'attachment; filename="research-method.json"'})
 
     @app.get("/journal")
     @app.get("/upcoming")
@@ -152,6 +175,8 @@ def application(path, port, login_code, *, request_stop=None):
                 db,
                 "company",
                 instrument=item,
+                imported=memory.recall(db,instrument_id)["imports"],
+                public_routes={k:v for k,v in sources_calendar.ROUTE_LABELS.items() if sources_calendar.eligible(item,k)},
                 passages=evidence.search(db, instrument_id, fixture=is_fixture(db)),
                 cases=[c for c in workspace.cases(db) if c["instrument_id"] == instrument_id],
             )
@@ -159,8 +184,19 @@ def application(path, port, login_code, *, request_stop=None):
     @app.get("/cases/{case_id}")
     def detail(req: Request, case_id: str):
         with closing(connect(path)) as db:
-            return page(req, db, "case", case=workspace.case_detail(db, case_id),
+            case=workspace.case_detail(db,case_id)
+            return page(req, db, "case", case=case, memory=memory.case_context(db,case),
                         case_notes=journal.case_notes(db, case_id))
+
+    @app.get("/cases/{case_id}/export")
+    def export_case(case_id:str):
+        with closing(connect(path)) as db:
+            return JSONResponse(memory.export_case(db,case_id),headers={"Content-Disposition":'attachment; filename="stock-insight-case.json"'})
+
+    @app.get("/memory/{record_id}")
+    def selected_history(req:Request,record_id:str):
+        with closing(connect(path)) as db:
+            return page(req,db,"memory",record=memory.get_import(db,record_id))
 
     @app.get("/sources/{instrument_id}/{document_id}")
     def source(instrument_id: str, document_id: str):
@@ -179,6 +215,7 @@ def application(path, port, login_code, *, request_stop=None):
                 req,
                 db,
                 "status",
+                delivery=delivery.dashboard(db),
                 can_stop=request_stop is not None,
                 providers=providers.capabilities(db),
                 states=db.execute("SELECT state,count(*) AS n FROM jobs GROUP BY state").fetchall(),
@@ -186,6 +223,14 @@ def application(path, port, login_code, *, request_stop=None):
 
     def mutate(action, data):
         with closing(connect(path)) as db:
+            if action.startswith("memory-"):
+                return memory.action(db,action,data)
+            if action.startswith("goal-"):
+                return goals.action(db,action,data)
+            if action.startswith("delivery-"):
+                return delivery.action(db,action,data)
+            if action.startswith("method-"):
+                return methods.action(db,action,data)
             if action.startswith("monitor-"):
                 return monitor.action(db, action, data)
             if action.startswith("journal-"):
