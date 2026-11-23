@@ -1,10 +1,11 @@
-"""Call the enabled Stock Insight Replay plugin from an authorized local task.
+"""Call the personal or replay Stock Insight plugin from an authorized local task.
 
 Read one JSON object with name and arguments from stdin. Use tools/list for
 discovery. The installed server owns workspace selection and all data access.
 """
 
 import asyncio
+import argparse
 import json
 import shutil
 import subprocess
@@ -21,10 +22,10 @@ async def request(config, name, arguments):
     from mcp.client.stdio import stdio_client
 
     if not config.get("enabled"):
-        raise ValueError("Stock Insight Replay is disabled in this environment.")
+        raise ValueError("The selected Stock Insight plugin is disabled in this environment.")
     transport = config["transport"]
     if transport["type"] != "stdio" or transport.get("env") or transport.get("env_vars"):
-        raise ValueError("Expected the installed local replay configuration.")
+        raise ValueError("Expected the installed local Stock Insight configuration.")
     if name != "tools/list" and not permitted(config, name):
         raise ValueError("This tool is disabled in the local configuration.")
     launch = StdioServerParameters(command=transport["command"], args=transport["args"], cwd=transport["cwd"])
@@ -38,9 +39,13 @@ async def request(config, name, arguments):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Call an enabled Stock Insight MCP plugin using one JSON request on stdin.")
+    parser.add_argument("--personal", action="store_true", help="Use the live personal plugin instead of the historical replay")
+    args = parser.parse_args()
+    server = "stock-insight" if args.personal else "stock-insight-replay"
     command = shutil.which("codex")
     if not command:
-        sys.exit("The local Codex CLI is required to discover the enabled replay plugin.")
+        sys.exit("The local Codex CLI is required to discover the enabled Stock Insight plugin.")
     try:
         message = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
         if not isinstance(message, dict) or not isinstance(message.get("name"), str):
@@ -48,10 +53,10 @@ def main():
         arguments = message.get("arguments", {})
         if not isinstance(arguments, dict):
             raise ValueError("Supply tool arguments as a JSON object.")
-        reply = subprocess.run([command, "mcp", "get", "stock-insight-replay", "--json"],
+        reply = subprocess.run([command, "mcp", "get", server, "--json"],
                                capture_output=True, encoding="utf-8")
         if reply.returncode:
-            raise ValueError("Stock Insight Replay is unavailable in this local configuration.")
+            raise ValueError(f"{server} is unavailable in this local configuration.")
         output = asyncio.run(request(json.loads(reply.stdout), message["name"], arguments))
         print(json.dumps(output, ensure_ascii=True))
         return int(bool(output.get("isError")))

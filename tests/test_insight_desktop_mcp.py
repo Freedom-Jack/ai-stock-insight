@@ -9,11 +9,37 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from stockinsight import assistant, assistant_mcp, db, desktop_mcp, replay, replay_client
 
 
 class Scope(unittest.TestCase):
+    def test_personal_manifest_selects_only_the_current_users_existing_live_desk(self):
+        with tempfile.TemporaryDirectory() as scratch, patch.dict(os.environ, LOCALAPPDATA=scratch):
+            personal = desktop_mcp.personal_directory()
+            path = personal / "research.sqlite3"
+            with self.assertRaises(sqlite3.OperationalError):
+                desktop_mcp.package(personal, personal=True)
+            with closing(db.connect(path, fixture=True)) as conn:
+                assistant.configure(conn)
+            with self.assertRaisesRegex(ValueError, "cannot target a replay"):
+                desktop_mcp.package(personal, personal=True)
+            other = Path(scratch) / "other"
+            with closing(db.connect(other / "research.sqlite3", fixture=False)) as conn:
+                assistant.configure(conn)
+            with self.assertRaisesRegex(ValueError, "Windows user's personal"):
+                desktop_mcp.package(other, personal=True)
+        with tempfile.TemporaryDirectory() as scratch, patch.dict(os.environ, LOCALAPPDATA=scratch):
+            personal = desktop_mcp.personal_directory()
+            with closing(db.connect(personal / "research.sqlite3", fixture=False)) as conn:
+                assistant.configure(conn)
+            with patch.object(assistant_mcp, "token", return_value=b"test-only"):
+                root = desktop_mcp.package(personal, personal=True)
+            config = json.loads((root / "plugins/stock-insight/.mcp.json").read_text())
+            server = config["mcpServers"]["stock-insight"]
+            self.assertEqual(server["args"][-2:], ["serve", "--personal"])
+
     def test_refuse_missing_and_personal_database(self):
         with tempfile.TemporaryDirectory() as folder:
             directory = Path(folder)
@@ -52,7 +78,7 @@ class DesktopTransport(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([item["name"] for item in filtered["tools"]], ["monitor_health"])
             with self.assertRaisesRegex(ValueError, "tool is disabled"):
                 await replay_client.request(config, "claim_research", {})
-            with self.assertRaisesRegex(ValueError, "Replay is disabled"):
+            with self.assertRaisesRegex(ValueError, "plugin is disabled"):
                 await replay_client.request({**config, "enabled": False}, "monitor_health", {})
             async with stdio_client(StdioServerParameters(**launch)) as (r, w), ClientSession(r, w) as session:
                 await session.initialize()

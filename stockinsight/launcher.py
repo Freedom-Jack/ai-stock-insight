@@ -1,18 +1,58 @@
 """Start the Windows personal desk from any working directory."""
 
 import argparse
+import json
 import os
 import sqlite3
+import subprocess
 import sys
-from contextlib import closing
+import tempfile
+import webbrowser
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 from . import __main__ as cli
 from . import backup, db
 
 
+@contextmanager
+def background_session(folder, port, code):
+    from .assistant_events import _protect
+    session = folder / "desk-session.dpapi"
+    payload = _protect(json.dumps({"port": port, "pid": os.getpid(), "password": code}).encode())
+    with tempfile.NamedTemporaryFile(dir=folder, delete=False) as staging:
+        staging.write(payload)
+    temp = Path(staging.name)
+    try:
+        temp.replace(session)
+        yield
+    finally:
+        temp.unlink(missing_ok=True)
+        if session.exists() and session.read_bytes() == payload:
+            session.unlink()
+
+
+def existing_session(folder, port):
+    from .assistant_events import _protect
+    session = folder / "desk-session.dpapi"
+    if not session.is_file():
+        return None
+    data = json.loads(_protect(session.read_bytes(), decrypt=True))
+    if data["port"] == port:
+        netstat = Path(os.environ["SystemRoot"]) / "System32" / "netstat.exe"
+        rows = subprocess.check_output([str(netstat), "-ano", "-p", "TCP"], timeout=10)
+        endpoint = f"127.0.0.1:{port}".encode()
+        owner = str(data["pid"]).encode()
+        for line in rows.splitlines():
+            fields = line.split()
+            if len(fields) == 5 and fields[1:3] == [endpoint, b"0.0.0.0:0"] and fields[-1] == owner:
+                return data
+    return None
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--background", action="store_true", help="Run silently at Windows sign-in")
     parser.add_argument(
         "--demo", action="store_true", help="Open the separate synthetic demo"
     )
@@ -41,6 +81,11 @@ def main(argv=None):
         help="Restore a verified backup into a new workspace and exit",
     )
     args = parser.parse_args(argv)
+    if args.background:
+        if sys.stdout is None:
+            sys.stdout = open(os.devnull, "w")
+        if sys.stderr is None:
+            sys.stderr = open(os.devnull, "w")
     root = args.root or (
         Path(os.environ.get("LOCALAPPDATA", Path.home())) / "StockInsight"
     )
@@ -62,6 +107,17 @@ def main(argv=None):
             root.mkdir(parents=True, exist_ok=True)
             print("Restored workspace", backup.create(original, folder))
             return 0
+        port = args.port if args.port is not None else 8766 if args.demo else 8765
+        entry = existing_session(folder, port)
+        if entry:
+            if not args.background:
+                url = f"http://127.0.0.1:{port}/today"
+                print(f"Open {url}\nUsername: research\nTerminal password: {entry['password']}", flush=True)
+                if not args.no_browser:
+                    webbrowser.open(url)
+                    if sys.stdin.isatty():
+                        input("Press Enter to close this launcher. ")
+            return 0
         if path.is_file():
             with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as conn:
                 version = conn.execute(
@@ -78,7 +134,6 @@ def main(argv=None):
             options.append("--fixture")
             if not path.exists() and cli.main([*options, "demo"]):
                 return 1
-        port = args.port if args.port is not None else 8766 if args.demo else 8765
         print("Workspace", folder, flush=True)
         return cli.main(
             [
@@ -86,7 +141,7 @@ def main(argv=None):
                 "serve",
                 "--port",
                 str(port),
-                *([] if args.no_browser else ["--open"]),
+                *(["--background"] if args.background else [] if args.no_browser else ["--open"]),
             ]
         )
     except (OSError, ValueError, sqlite3.Error) as exc:

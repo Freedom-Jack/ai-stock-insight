@@ -1,5 +1,6 @@
 """Exercise launcher profile isolation, verified restore and pre-upgrade recovery."""
 
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -12,6 +13,21 @@ from stockinsight import db, launcher, universe
 
 
 class LauncherWorkspaceTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows per-user encryption")
+    def test_encrypted_session_is_reused_only_by_its_listening_process(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            file = folder / "desk-session.dpapi"
+            with launcher.background_session(folder, 8765, "test-only-passphrase"):
+                self.assertNotIn(b"test-only-passphrase", file.read_bytes())
+                listener = f"TCP  127.0.0.1:8765  0.0.0.0:0  LISTENING  {os.getpid()}\r\n".encode()
+                with patch.object(launcher.subprocess, "check_output", return_value=listener):
+                    self.assertEqual(launcher.existing_session(folder, 8765)["password"], "test-only-passphrase")
+                    self.assertIsNone(launcher.existing_session(folder, 8766))
+                with patch.object(launcher.subprocess, "check_output", return_value=b""):
+                    self.assertIsNone(launcher.existing_session(folder, 8765))
+            self.assertFalse(file.exists())
+
     def test_version_two_upgrade_saves_restorable_original_and_never_overwrites_another_profile(
         self,
     ):

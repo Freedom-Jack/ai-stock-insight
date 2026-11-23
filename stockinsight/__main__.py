@@ -130,6 +130,7 @@ def build_parser():
     server = actions.add_parser("serve", aliases=["run"])
     server.add_argument("--port", type=int, default=8765, choices=range(1024, 65536), metavar="PORT")
     server.add_argument("--open", action="store_true")
+    server.add_argument("--background", action="store_true", help="Save the session for the Windows sign-in launcher")
     return app
 
 
@@ -276,13 +277,19 @@ def main(argv=None):
                 server_header=False,
             )
             server = uvicorn.Server(config)
-            print(
-                f"Open {url}\nUsername: research\nTerminal password: {code}\nCtrl+C stops the private desk.",
-                flush=True,
-            )
+            if not args.background:
+                print(
+                    f"Open {url}\nUsername: research\nTerminal password: {code}\nCtrl+C stops the private desk.",
+                    flush=True,
+                )
             if args.open:
                 webbrowser.open(url + "/today")
-            server.run(sockets=[listener])
+            if args.background:
+                from .launcher import background_session
+                with background_session(folder, args.port, code):
+                    server.run(sockets=[listener])
+            else:
+                server.run(sockets=[listener])
         return 0
     except (OSError, ValueError, sqlite3.Error) as exc:
         print(str(exc), file=sys.stderr)
