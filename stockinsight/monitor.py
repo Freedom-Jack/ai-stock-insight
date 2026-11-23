@@ -6,7 +6,7 @@ import sqlite3
 from contextlib import closing
 from datetime import date, datetime, timedelta
 
-from . import events, evidence, issuer_news, providers, sources_calendar, universe
+from . import events, evidence, issuer_news, providers, sources_calendar, supplier, universe
 from .db import connect, instant, is_fixture, now, uid, write
 
 SCHEMA = """
@@ -387,7 +387,7 @@ def run_foreground(path, stop_event):
         while not stop_event.is_set():
             busy = False
             tasks = (delivery.tick, assistant_events.tick) if assistant.profile(db)["replay_clock"] else (
-                delivery.tick, tick, proactive.tick, assistant_events.tick, memory.tick, agenda.tick)
+                delivery.tick, tick, supplier.tick, proactive.tick, assistant_events.tick, memory.tick, agenda.tick)
             for task in tasks:
                 if stop_event.is_set():
                     break
@@ -411,6 +411,12 @@ def action(db, action, data):
         sources_calendar.compare_reports(
             db, data.get("left", ""), data.get("right", ""), data.get("judgment"), data.get("reason")
         )
+    elif action == "monitor-supplier":
+        if data.get("enabled") not in ("0", "1"):
+            raise ValueError("Choose whether to run supplier checks.")
+        supplier.set_enabled(db, data["enabled"] == "1")
+    elif action == "monitor-supplier-review":
+        supplier.review(db, data)
     elif action == "monitor-configure":
         if data.get("enabled") not in ("0", "1"):
             raise ValueError("Choose whether to enable the schedule.")
@@ -470,8 +476,11 @@ def dashboard(db, *, at=None):
            WHERE EXISTS(SELECT 1 FROM source_memberships m WHERE m.instrument_id=i.id AND m.status='active')
            ORDER BY p.scheduled_day DESC,p.id"""
     )
-    sourced = """SELECT e.event_id AS id,e.instrument_id,i.ticker,i.raw_label,
-           CASE WHEN d.origin='issuer_news' THEN p.text WHEN r.title IS NOT NULL THEN r.title ELSE e.kind END AS title,e.kind,e.state,
+    sourced = """SELECT e.event_id AS id,e.id AS version_id,e.instrument_id,i.ticker,i.raw_label,
+           CASE WHEN d.origin='issuer_news' THEN p.text WHEN r.title IS NOT NULL THEN r.title
+                WHEN d.origin IN ('usgs_earthquake','tsmc_earthquake_disclosure') THEN d.title
+                WHEN d.origin='supplier_operator_assessment' THEN 'TSMC operational assessment'
+                ELSE e.kind END AS title,e.kind,e.state,
            e.scheduled_start,e.scheduled_end,e.occurred_at,e.precision,e.source_ref,d.title AS provenance,
            CASE WHEN d.origin IN ('issuer_news','cma_news') THEN json_extract(p.locator,'$.link') ELSE d.source_url END AS source_url,
            r.relevance AS source_relevance,e.source_timezone,d.version_hash,p.text AS excerpt,d.received_at FROM event_versions e
@@ -498,7 +507,9 @@ def dashboard(db, *, at=None):
     upcoming.sort(key=lambda v: (v["day"] is None, v["day"] or "", v["id"]))
     recent = rows(
         sourced
-        + " ORDER BY coalesce(e.occurred_at,e.scheduled_start,'') DESC,e.commit_seq DESC LIMIT 60"
+        + """ ORDER BY coalesce(e.occurred_at,e.scheduled_start,
+                  CASE WHEN d.origin='usgs_earthquake' THEN d.received_at END,
+                  '') DESC,e.commit_seq DESC LIMIT 60"""
     )
     active_listings = universe.universe(db)["instruments"]
     publications = rows(
@@ -518,6 +529,7 @@ def dashboard(db, *, at=None):
         "sec_ready": bool(providers.sec_contact()),
         "reports": sources_calendar.coverage(db),
         "publications": publications,
+        "supplier": None if is_fixture(db) else supplier.dashboard(db, stamp),
         "comparisons": sources_calendar.report_comparisons(db),
         "routes": [
             {

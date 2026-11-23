@@ -101,6 +101,11 @@ FIELDS = ("ticker", "conid", "security_type", "listing_exchange", "routing_excha
 LISTING = ("ticker", "listing_exchange", "security_type", "currency")
 # Curated common-share listing identities, backed by the linked filing cover pages.
 _ISSUERS = {
+    ("AMD", "NASDAQ", "STK", "USD"): (
+        "Advanced Micro Devices, Inc.",
+        "0000002488",
+        "https://www.sec.gov/Archives/edgar/data/2488/000000248824000012/amd-20231230.htm",
+    ),
     ("NVDA", "NASDAQ", "STK", "USD"): (
         "NVIDIA Corporation",
         "0001045810",

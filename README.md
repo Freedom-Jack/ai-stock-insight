@@ -12,6 +12,8 @@ Open **http://127.0.0.1:8765/today**. Sign in as `research` with the password pr
 
 Use **Ctrl+C** in the terminal or **Status → Stop this desk** to stop. The same command reopens your saved research and schedules. For the isolated synthetic demo run `.\Start-StockInsight.cmd --demo` (port 8766). [First use, access, updates, backup and restore](docs/windows-trial.md)
 
+For the TSMC supplier monitor, add qualified AMD or NVDA listings and enable checks under **Events & monitoring → TSMC supplier watch**. Use the listing fields ticker, exchange, security type and currency, for example `NVDA,NASDAQ,STK,USD`. Stock Insight checks USGS every five minutes and the TWSE disclosure index hourly. It adds matching events and source links to the desk and queues notices through its existing delivery settings. Review a linked TSMC disclosure in the same view before changing the operational assessment. The standalone Stockwatch commands can still open their own historical ledgers.
+
 ## Open the historical company investigation
 
 This checkout contains a saved, isolated NVIDIA replay with its initial report and a later question about supply commitments. From the project directory, run

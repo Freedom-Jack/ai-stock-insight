@@ -9,7 +9,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from . import issuer
 from .model import Observation, now, utc
 from .operator import document_url
-from .store import ENTRY, failed_poll, ingest, last_evidence_receipt, record_health
+from .store import entry_query, entry_table, failed_poll, last_evidence_receipt, record_health, save_observations
 
 
 SOURCE = "TSMC"
@@ -17,12 +17,12 @@ TAIPEI = timezone(timedelta(hours=8))
 LOOKBACK = timedelta(days=30)
 
 
-def _watches(db):
+def _watches(db, embedded):
     # Use the latest assessed status, and the latest origin coordinates.
     # Include closed watches in the ambiguity check: a bulletin about two
     # same-day incidents cannot safely be assigned to the one still open.
-    rows = db.execute(ENTRY + """
-        WHERE sequence = (SELECT MAX(ii.sequence) FROM inbox ii
+    rows = db.execute(entry_query(embedded) + f"""
+        WHERE sequence = (SELECT MAX(ii.sequence) FROM {entry_table(embedded)} ii
             JOIN observations oo USING(id, revision) WHERE ii.incident=i.incident AND oo.kind!='issuer_candidate')
     """)
     watches = []
@@ -37,7 +37,7 @@ def _watches(db):
     return watches
 
 
-def _assess(db, doc, watches):
+def _assess(db, doc, watches, embedded):
     if doc["event_date"] is None:
         return "issuer did not identify one Taiwan earthquake date", None
     matches = [row for day, origin, row in watches
@@ -49,8 +49,8 @@ def _assess(db, doc, watches):
     watch = matches[0]
     if watch["status"] in {"closed", "withdrawn"}:
         return "matching watch already closed or withdrawn", None
-    assessed = db.execute("""
-        SELECT o.url, o.seen_at, o.revision FROM inbox i JOIN observations o USING (id, revision)
+    assessed = db.execute(f"""
+        SELECT o.url, o.seen_at, o.revision FROM {entry_table(embedded)} i JOIN observations o USING (id, revision)
         WHERE i.incident=? AND o.kind='operator_update'
     """, (watch["incident"],))
     previous_edition = db.execute("SELECT 1 FROM issuer_documents WHERE doc_key=? AND edition<? LIMIT 1",
@@ -83,7 +83,7 @@ def _capture(db, bulletins, seen):
     return inserted
 
 
-def _review(db, seen):
+def _review(db, seen, embedded):
     cutoff = utc((datetime.fromisoformat(seen) - LOOKBACK).isoformat())
     # Reconsider unmatched recent documents if the hazard arrives on a later
     # cycle. Superseded editions remain available for point-in-time audit.
@@ -96,10 +96,10 @@ def _review(db, seen):
     """, (cutoff,)).fetchall()
     if not pending:
         return []
-    watches = _watches(db)
+    watches = _watches(db, embedded)
     candidates = []
     for doc in pending:
-        reason, incident = _assess(db, doc, watches)
+        reason, incident = _assess(db, doc, watches, embedded)
         previous = db.execute("SELECT reason FROM issuer_reviews WHERE edition=? ORDER BY sequence DESC LIMIT 1",
                               (doc["edition"],)).fetchone()
         if previous and previous["reason"] == reason:
@@ -121,25 +121,31 @@ def _review(db, seen):
     return candidates
 
 
+def save_snapshot(db, snapshot, seen, *, embedded=False):
+    """Save a fetched edition, matches and source checkpoint in one transaction."""
+    if not db.in_transaction:
+        raise ValueError("Issuer evidence requires a transaction")
+    previous = last_evidence_receipt(db)
+    if previous and seen < previous:
+        raise ValueError("issuer receipt would backdate the ledger; check the receipt clock")
+    added = _capture(db, snapshot.bulletins, seen)
+    candidates = _review(db, seen, embedded)
+    report_day = date.fromisoformat(snapshot.report_date)
+    midnight = datetime.combine(report_day, time.min, tzinfo=TAIPEI)
+    record_health(db, SOURCE, seen, utc(midnight.isoformat()))
+    _, entries = save_observations(db, candidates, embedded=embedded)
+    return added, entries
+
+
 def poll_issuer(db, *, clock=now, fetch=None):
     """Return (new public bulletins, new inbox entries). On failure persist health, then raise."""
     fetch = issuer.fetch_bulletins if fetch is None else fetch
     db.execute("BEGIN IMMEDIATE")
     try:
         snapshot = fetch(clock())
-        seen = utc(clock())
-        previous = last_evidence_receipt(db)
-        if previous and seen < previous:
-            raise ValueError("issuer receipt would backdate the ledger; check the receipt clock")
-        added = _capture(db, snapshot.bulletins, seen)
-        candidates = _review(db, seen)
-        # ingest commits the captured documents, dispositions, health and alerts
-        # together; its own conflict checks apply to these local inbox entries.
-        report_day = date.fromisoformat(snapshot.report_date)
-        midnight = datetime.combine(report_day, time.min, tzinfo=TAIPEI)
-        record_health(db, SOURCE, seen, utc(midnight.isoformat()))
-        _, entries = ingest(db, candidates)
-        return added, entries
+        result = save_snapshot(db, snapshot, utc(clock()))
+        db.commit()
+        return result
     except (ValueError, OSError, HTTPException, sqlite3.Error) as exc:
         db.rollback()
         failed_poll(db, clock(), str(exc), source=SOURCE)

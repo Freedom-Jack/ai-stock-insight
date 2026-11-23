@@ -1,5 +1,39 @@
 <h1>Watchlist monitoring</h1>
 <p>Source checks run while this desk is open. Times are UTC. Dates reported by an issuer retain their original precision.</p>
+{% if monitor.supplier %}{% set s = monitor.supplier %}
+<section id="supplier">
+  <h2>TSMC supplier watch</h2>
+  <p>USGS every 5 minutes and TWSE disclosures hourly when enabled. Earthquake screens use magnitude {{ s.magnitude }} and {{ s.radius }} km from the documented reference site.</p>
+  {% if s.tickers %}<p>{{ s.tickers | join(', ') }} · {{ s.coverage }}</p>
+  {% else %}<p>Add a qualified AMD or NVDA listing to <a href="/universe">Companies &amp; themes</a> to start checks.</p>{% endif %}
+  <form method="post" action="/actions/monitor-supplier">{{ token() }}
+    <input type="hidden" name="enabled" value="{{ '0' if s.enabled else '1' }}">
+    <button>{{ 'Disable' if s.enabled else 'Enable' }} supplier checks</button>
+  </form>
+  {% for source in s.sources %}<p><strong>{{ source.name }}</strong> · Last successful check {{ source.last_ok or 'pending' }}
+    {% if s.enabled and s.tickers %} · Due {{ source.due_at }}{% endif %}{% if source.error %}<br>{{ source.error }}{% endif %}</p>{% endfor %}
+  {% for gap in s.gaps %}<p>{{ gap }}</p>{% endfor %}
+  {% if s.review %}<h3>TSMC disclosures to review</h3>{% endif %}
+  {% for item in s.review %}<article>
+    <a href="{{ item.url }}" rel="noreferrer">{{ item.title }}</a>
+    <p class="meta">Published {{ item.revision }} · {{ item.incident }}</p>
+    <blockquote>{{ item.excerpt }}</blockquote>
+    <details><summary>Record an operational assessment</summary>
+      <form method="post" action="/actions/monitor-supplier-review">{{ token() }}
+        <input type="hidden" name="entry" value="{{ item.sequence }}">
+        <label>Status <select name="status"><option value="monitoring">Keep monitoring</option><option value="narrowed">Narrow watch</option><option value="closed">Close watch</option></select></label>
+        <label>Reviewed passage or locator <input name="locator" required maxlength="500"></label>
+        <label>Remaining uncertainty <input name="uncertainty" required maxlength="350"></label>
+        <label>Next check <input name="next_check" required maxlength="350"></label>
+        <button>Save assessment</button>
+      </form>
+    </details>
+  </article>{% endfor %}
+  {% if s.unlinked %}<details><summary>Unmatched TSMC disclosures</summary>
+    {% for item in s.unlinked %}<p><a href="{{ item.url }}" rel="noreferrer">{{ item.title }}</a> · {{ item.reason }}</p>{% endfor %}
+  </details>{% endif %}
+</section>
+{% endif %}
 <section>
   <h2>Upcoming events and plans</h2>
   {% for e in monitor.upcoming %}
@@ -88,7 +122,7 @@
 <section>
   <h2>Watchlist event observations</h2>
   {% for e in monitor.events %}
-    <article><strong>{{ e.title | replace('_',' ') }} · {{ 'published' if e.kind=='issuer_announcement' else e.state }}</strong>
+    <article><strong><a href="/events/{{ e.version_id }}">{{ e.title | replace('_',' ') }}</a> · {{ 'published' if e.kind=='issuer_announcement' else ('watch withdrawn' if e.kind=='supplier_earthquake_watch' and e.state=='cancelled' else e.state) }}</strong>
       <p><a href="/companies/{{ e.instrument_id }}">{{ e.ticker or e.raw_label }}</a> · {{ e.occurred_at or e.scheduled_start or 'Time unknown' }} · {{ e.precision }} precision</p>
       <details><summary>{{ e.provenance }}</summary><blockquote>{{ e.excerpt }}</blockquote><small>Captured {{ e.received_at }} · {{ e.source_ref }}<br>Source version <code>{{ e.version_hash }}</code></small>
         {% if e.source_url and e.source_url.startswith('https://') %}<p><a href="{{ e.source_url }}" rel="noreferrer">Original source</a></p>{% endif %}

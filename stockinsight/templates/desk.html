@@ -56,12 +56,13 @@
     {% else %}<p>No upcoming watchlist events.</p>{% endfor %}<a href="/monitor">Open events &amp; monitoring</a></section></div>
   <section><h2>Planned research and reviews</h2>{% for n in journal.upcoming[:8] %}<p>{{ n.ticker or n.raw_label }} · {{ n.review_on or 'Unscheduled' }}<br><a href="/journal#{{ n.id }}">{{ n.body }}</a></p>
     {% else %}<p>No pending questions or review conditions.</p>{% endfor %}<a href="/upcoming">Open upcoming research</a></section>
-  {% if monitor.events %}<section><h2>Recent watchlist events</h2>{% for e in monitor.events[:5] %}<p><small>{{ e.ticker or e.raw_label }} · {{ (e.occurred_at or e.scheduled_start or 'Date unknown')[:10] }}</small><br><a href="/monitor">{{ e.title | replace('_', ' ') }}</a></p>{% endfor %}</section>{% endif %}
+  {% if monitor.events %}<section><h2>Recent watchlist events</h2>{% for e in monitor.events[:5] %}<p><small>{{ e.ticker or e.raw_label }} · {{ (e.occurred_at or e.scheduled_start or 'Date unknown')[:10] }}</small><br><a href="/events/{{ e.version_id }}">{{ e.title | replace('_', ' ') }}</a></p>{% endfor %}</section>{% endif %}
 {% elif view=='goals' %}{% include 'goals.html' %}
 {% elif view=='agenda' %}{% include 'agenda.html' %}
 {% elif view=='event' %}<p><a href="/monitor">Events and monitoring</a></p><h1>{{ event.kind | replace('_',' ') | capitalize }}</h1>
 <p>{{ event.state }} · {{ event.occurred_at or event.scheduled_start }}{% if event.scheduled_end %} through {{ event.scheduled_end }}{% endif %} · {{ event.precision }} precision</p>
 {{ sources(source) }}{% if event.supersedes %}<p><a href="/events/{{ event.supersedes }}">Earlier event edition</a></p>{% endif %}
+{% if event.kind=='supplier_disclosure' %}<p><a href="/monitor#supplier">Review TSMC disclosures</a></p>{% endif %}
 {% elif view=='exposure' %}{% include 'exposure.html' %}
 {% elif view=='goal_report' %}{% include 'goal_report.html' %}
 {% elif view=='methods' %}{% include 'methods.html' %}
