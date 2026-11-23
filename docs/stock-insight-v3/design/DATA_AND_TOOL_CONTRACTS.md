@@ -145,6 +145,8 @@ Use separate `dispatch_outbox` and `notification_outbox` tables with stable dedu
 
 Notification outcomes include queuing, attempt, provider acceptance, observable delivery, failure and expiry. An interrupted attempt with unknown delivery retains that uncertainty. Commit the durable inbox with the brief, then deliver through the configured external route. Preserve the brief on delivery failure. Record user review separately.
 
+Earlier handoffs use `provider_accepted` for a channel acknowledging a submission and `confirmed_delivered` for independently observed delivery. In acceptance records, name the channel and the observation. For ChatGPT Work, record the event callback, the worker's accepted research and the appearance of the result in the target chat separately. Only an explicit review action establishes user review.
+
 On restart/resume: obtain the single-instance lock; reconcile missed obligations and leases; verify pending snapshot references; restore outbox processing; refresh stale sources; create one bounded catch-up per goal/coverage range; then normal dispatch. Preserve each missed occurrence. Supersede obsolete summaries without deleting their records.
 
 ## 10. Deterministic analysis contracts
