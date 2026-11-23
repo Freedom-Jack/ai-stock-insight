@@ -56,7 +56,7 @@ class LauncherWorkspaceTests(unittest.TestCase):
                 return 0
 
             with patch.object(launcher.cli, "main", side_effect=start):
-                self.assertEqual(launcher.main(["--root", str(root)]), 0)
+                self.assertEqual(launcher.main(["--root", str(root), "--no-browser"]), 0)
             (backup,) = (root / "backups").iterdir()
             with closing(sqlite3.connect(backup / "research.sqlite3")) as original:
                 self.assertEqual(

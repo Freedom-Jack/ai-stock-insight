@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import webbrowser
 from contextlib import closing, contextmanager
 from pathlib import Path
@@ -50,9 +51,32 @@ def existing_session(folder, port):
     return None
 
 
+def start_tray_desk(folder, port):
+    import win32event
+    import win32process
+
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    args = [str(pythonw), "-B", "-m", "stockinsight.launcher", "--background",
+            "--root", str(folder.parent), "--port", str(port)]
+    process, thread, _, _ = win32process.CreateProcess(
+        str(pythonw), subprocess.list2cmdline(args), None, None, False, subprocess.CREATE_NO_WINDOW,
+        None, str(Path(__file__).resolve().parents[1]), win32process.STARTUPINFO(),
+    )
+    thread.Close()
+    with closing(process):
+        until = time.monotonic() + 60
+        while time.monotonic() < until:
+            session = existing_session(folder, port)
+            if session:
+                return session
+            if win32event.WaitForSingleObject(process, 250) == win32event.WAIT_OBJECT_0:
+                break
+    raise OSError("Could not open the personal desk in the Windows taskbar. Check the desktop session and port.")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--background", action="store_true", help="Run silently at Windows sign-in")
+    parser.add_argument("--background", action="store_true", help="Run with a Windows taskbar icon")
     parser.add_argument(
         "--demo", action="store_true", help="Open the separate synthetic demo"
     )
@@ -109,6 +133,8 @@ def main(argv=None):
             return 0
         port = args.port if args.port is not None else 8766 if args.demo else 8765
         entry = existing_session(folder, port)
+        if entry is None and os.name == "nt" and not (args.background or args.no_browser or args.demo):
+            entry = start_tray_desk(folder, port)
         if entry:
             if not args.background:
                 url = f"http://127.0.0.1:{port}/today"

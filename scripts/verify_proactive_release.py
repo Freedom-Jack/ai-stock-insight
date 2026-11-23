@@ -1,9 +1,8 @@
-"""Explicit Windows acceptance run with a real user-session notice and free public sources."""
+"""Check public-source research and review persistence with the browser closed."""
 
 import argparse
 import json
 import sqlite3
-import sys
 import tempfile
 import time
 from contextlib import closing
@@ -11,10 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
-from verify_windows_trial import REPO, launcher
-
-sys.path.insert(0, str(REPO))
-from stockinsight.delivery_check import observe
+from verify_windows_trial import launcher
 
 
 def sign_in(browser, origin, password):
@@ -59,32 +55,25 @@ def main():
             db.row_factory = sqlite3.Row
             deadline = time.monotonic() + 220
             while time.monotonic() < deadline:
-                row = db.execute("""SELECT n.id,d.id AS report_id,d.runtime,d.method_report,n.shown_at FROM delivery_notices n
-                    JOIN goal_dispatch d ON n.notice_key='goal:'||d.id WHERE n.state='shown' AND d.kind='event'
-                    ORDER BY n.shown_at DESC LIMIT 1""").fetchone()
-                if row and not proof.get("notification"):
-                    observed = observe(db, row["id"])
-                    if observed["independent_window_probe"]:
-                        assert row["shown_at"] > closed_at
-                        proof.update(
-                            notification=observed,
-                            report_id=row["report_id"],
-                            method_id=row["method_report"],
-                            worker=json.loads(row["runtime"]),
-                        )
+                row = db.execute("""SELECT id,runtime,method_report,ended_at FROM goal_dispatch
+                    WHERE state='complete' AND kind='event' AND ended_at>?
+                    ORDER BY ended_at LIMIT 1""", (closed_at,)).fetchone()
+                if row and "report_id" not in proof:
+                    proof.update(report_id=row["id"], method_id=row["method_report"],
+                                 ended_at=row["ended_at"], worker=json.loads(row["runtime"]))
                 if (
-                    proof.get("notification")
+                    proof.get("report_id")
                     and db.execute("SELECT 1 FROM goal_context_reads LIMIT 1").fetchone()
                 ):
                     break
                 time.sleep(0.25)
-            if not proof.get("notification"):
+            if not proof.get("report_id"):
                 print(
                     "Dispatch states",
                     [tuple(r) for r in db.execute("SELECT kind,state,detail FROM goal_dispatch LIMIT 8")],
                 )
                 raise RuntimeError(
-                    "No independently visible Stock Insight notification in the closed-browser window"
+                    "No completed research report after closing the browser"
                 )
             assert db.execute("SELECT count(*) FROM goal_context_reads").fetchone()[0] > 0
             assert proof["worker"]["mode"] == "on_device_model"

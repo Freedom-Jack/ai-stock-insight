@@ -255,7 +255,7 @@ def application(path, port, login_code, *, request_stop=None):
                 return memory.action(db,action,data)
             if action.startswith("goal-"):
                 return goals.action(db,action,data)
-            if action.startswith("delivery-"):
+            if action.startswith("delivery-") and delivery._channel() == "ntfy":
                 return delivery.action(db,action,data)
             if action.startswith("method-"):
                 return methods.action(db,action,data)

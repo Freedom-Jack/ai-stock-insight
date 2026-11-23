@@ -6,12 +6,8 @@ import http.client
 import json
 import os
 import re
-import subprocess
-import sys
-import time
 from contextlib import nullcontext
 from datetime import datetime, timedelta
-from pathlib import Path
 from urllib.parse import urlsplit
 
 from .db import instant, is_fixture, now, uid, write
@@ -89,8 +85,7 @@ def enqueue(db, *, key, title, message, report_path, at=None):
 
 
 def _channel():
-    override = os.environ.get("STOCKINSIGHT_NOTIFICATION_CHANNEL")
-    return override or ("windows" if os.name == "nt" else "unconfigured")
+    return "ntfy" if os.environ.get("STOCKINSIGHT_NOTIFICATION_CHANNEL") == "ntfy" else "unconfigured"
 
 
 def _ntfy_config():
@@ -117,8 +112,6 @@ def _ntfy_config():
 
 
 def _available(channel):
-    if channel == "windows":
-        return os.name == "nt"
     if channel == "ntfy":
         try:
             _ntfy_config()
@@ -129,17 +122,14 @@ def _available(channel):
 
 
 def _claim(db, stamp, channel):
-    replay = is_fixture(db) and channel=="windows" and db.execute("SELECT replay_clock FROM assistant_profile").fetchone()[0] is not None
     can_send = (
-        (replay or not is_fixture(db))
+        not is_fixture(db)
         and _available(channel)
         and db.execute("SELECT enabled FROM delivery_settings").fetchone()[0]
     )
     due = """SELECT * FROM delivery_notices n WHERE (state='pending' OR (state='failed' AND
              (SELECT count(*) FROM delivery_attempts a WHERE a.notice_id=n.id)<6)) AND next_at<=?
              AND expires_at>? ORDER BY created_at,id LIMIT 1"""
-    if replay:
-        due = due.replace("ORDER BY created_at", "AND notice_key LIKE 'assistant:%' ORDER BY created_at")
     maintenance = db.execute(
         """SELECT 1 FROM delivery_attempts WHERE outcome='sending' AND deadline<=?
         UNION ALL SELECT 1 FROM delivery_notices WHERE state IN ('pending','failed','uncertain') AND expires_at<=? LIMIT 1""",
@@ -163,7 +153,7 @@ def _claim(db, stamp, channel):
             (stamp,),
         )
         if (
-            (is_fixture(db) and not replay)
+            is_fixture(db)
             or not _available(channel)
             or not db.execute("SELECT enabled FROM delivery_settings").fetchone()[0]
         ):
@@ -182,20 +172,6 @@ def _claim(db, stamp, channel):
             (attempt, row["id"], channel, stamp, _later(stamp, seconds=50)),
         )
         return attempt, dict(row)
-
-
-def _accepted(db, attempt, stamp):
-    with write(db):
-        db.execute(
-            """UPDATE delivery_attempts SET accepted_at=coalesce(accepted_at,?)
-                      WHERE id=? AND outcome='sending'""",
-            (stamp, attempt),
-        )
-        db.execute(
-            """UPDATE delivery_notices SET accepted_at=coalesce(accepted_at,?)
-                      WHERE active_attempt=? AND state='sending'""",
-            (stamp, attempt),
-        )
 
 
 def _finish(db, attempt, state, detail, *, observation=None, at=None):
@@ -236,63 +212,6 @@ def _finish(db, attempt, state, detail, *, observation=None, at=None):
             (state, next_at, accepted, shown, row["id"]),
         )
         return True
-
-
-def _windows(db, attempt):
-    db_path = db.execute("PRAGMA database_list").fetchone()["file"]
-    if not db_path:
-        return "failed", "Windows notices require a persistent workspace.", None
-    port = os.environ.get("STOCKINSIGHT_DESK_PORT", "8765")
-    if not re.fullmatch(r"[0-9]{4,5}", port) or not 1024 <= int(port) <= 65535:
-        return "failed", "The private desk port is invalid.", None
-    # Child reads its own frozen report path from SQLite. No financial text,
-    # provider credentials or session token travel on the command line.
-    env = {
-        k: os.environ[k]
-        for k in ("SystemRoot", "WINDIR", "TEMP", "TMP", "LOCALAPPDATA")
-        if k in os.environ
-    }
-    try:
-        process = subprocess.Popen(
-            [
-                sys.executable,
-                "-B",
-                "-m",
-                "stockinsight.windows_notice",
-                db_path,
-                attempt,
-                port,
-            ],
-            cwd=Path(__file__).resolve().parent.parent,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-    except OSError:
-        return (
-            "failed",
-            "Windows could not start the private notification process.",
-            None,
-        )
-    _accepted(db, attempt, now())
-    # The child persists the evidence before waiting for an operator click.
-    deadline = time.monotonic() + 6
-    while time.monotonic() < deadline:
-        state = db.execute(
-            "SELECT outcome FROM delivery_attempts WHERE id=?", (attempt,)
-        ).fetchone()[0]
-        if state != "sending":
-            return state, None, None
-        if process.poll() is not None:
-            return (
-                "uncertain",
-                "The notification process exited without a display receipt.",
-                None,
-            )
-        time.sleep(0.1)
-    return "sending", None, None
 
 
 def _ntfy():
@@ -366,11 +285,8 @@ def tick(db, *, at=None):
     if claimed is None:
         return None
     attempt, _ = claimed
-    state, detail, observation = (
-        _windows(db, attempt) if channel == "windows" else _ntfy()
-    )
-    if detail is not None:
-        _finish(db, attempt, state, detail, observation=observation, at=at)
+    state, detail, observation = _ntfy()
+    _finish(db, attempt, state, detail, observation=observation, at=at)
     return state
 
 

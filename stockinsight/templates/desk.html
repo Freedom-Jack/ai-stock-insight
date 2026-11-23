@@ -160,12 +160,12 @@
   {% else %}{% for r in record.payload.case.revisions %}<article><h2>Archived revision {{ r.revision }}</h2><p>{{ r.body.conclusion }}</p><p>{{ r.method }} · {{ r.as_of }}</p>{% for s in r.sources %}<p>{{ s.title }} · {{ s.locator }}<br>{{ s.text }}</p>{% endfor %}</article>{% endfor %}{% endif %}
 {% elif view=='status' %}
   <h1>Workspace status</h1><h2>Investigator</h2>
-  <section><h2>External notifications</h2><p>{{ delivery.channel }} · {{ 'enabled' if delivery.enabled else 'disabled' }} · {{ 'available' if delivery.available else 'unavailable' }}</p>
+  {% if delivery.channel == 'ntfy' %}<section><h2>External notifications</h2><p>{{ delivery.channel }} · {{ 'enabled' if delivery.enabled else 'disabled' }} · {{ 'available' if delivery.available else 'unavailable' }}</p>
   <form method="post" action="/actions/delivery-configure">{{ token() }}<input type="hidden" name="enabled" value="{{ '0' if delivery.enabled else '1' }}"><button>{{ 'Disable' if delivery.enabled else 'Enable' }} notifications</button></form>
   <form method="post" action="/actions/delivery-test">{{ token() }}<input type="hidden" name="key" value="{{ request_key }}"><button>Send a test notice</button></form>
   {% for n in delivery.notices %}<p>{{ n.created_at }} · {{ n.state }} · <a href="{{ n.report_path }}">{{ n.title }}</a></p>
   {% if n.state in ('failed','uncertain') %}<form method="post" action="/actions/delivery-retry">{{ token() }}<input type="hidden" name="id" value="{{ n.id }}">{% if n.state=='uncertain' %}<label><input name="confirm" value="1" type="checkbox" required> An earlier notice may have been delivered.</label>{% endif %}<button>Retry delivery</button></form>{% endif %}{% endfor %}
-  <details><summary>Delivery attempts</summary>{% for a in delivery.attempts %}<p>{{ a.started_at }} · {{ a.outcome }} · {{ a.detail or '' }}</p>{% endfor %}</details></section>
+  <details><summary>Delivery attempts</summary>{% for a in delivery.attempts %}<p>{{ a.started_at }} · {{ a.outcome }} · {{ a.detail or '' }}</p>{% endfor %}</details></section>{% endif %}
   {% if assistant_state.enabled %}<p>{{ assistant_state.label }} · ChatGPT Work research connection enabled.</p>
   <p>Research jobs {{ assistant_state.jobs }} · Active event subscriptions {{ assistant_state.subscriptions }} · Platform event receipts {{ assistant_state.platform_events }}</p>
   <p>Check scheduled runs and their delivery in your dot under Scheduled.</p>

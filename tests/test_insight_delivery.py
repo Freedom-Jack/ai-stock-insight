@@ -155,3 +155,11 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(delivery.tick(self.db, at=STAMP), "uncertain")
             self.assertIsNone(delivery.tick(self.db, at=LATER))
             self.assertEqual(channel.return_value.request.call_count, 1)
+
+    def test_desktop_has_no_popup_route_even_with_a_legacy_windows_setting(self):
+        delivery.enqueue(self.db, **DETAIL, at=STAMP)
+        for value in ("", "windows"):
+            with self.subTest(value=value), patch.dict(os.environ, STOCKINSIGHT_NOTIFICATION_CHANNEL=value):
+                self.assertEqual(delivery._channel(), "unconfigured")
+                self.assertIsNone(delivery.tick(self.db, at=STAMP))
+                self.assertEqual(delivery.dashboard(self.db)["attempts"], [])

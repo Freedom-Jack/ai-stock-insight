@@ -16,7 +16,9 @@ To collect after each Windows sign-in, run the following once from this checkout
 .\ops\windows\Enable-StockInsightAtSignIn.ps1
 ```
 
-The computer checks eligible public sources and keeps the evidence, research queue and Windows notification receipts in `%LOCALAPPDATA%\StockInsight\personal`. A connected dot can claim a queued case, read the saved sources, perform a comparison and write back a cited report. Its schedule and destination belong to the Work account. Keep the selected computer online and connected to Work. Use **Status → Stop this desk** to stop collection for the session. Removing **Stock Insight.lnk** from the current user's Startup folder disables automatic launch. [Live verification and account-specific delivery status](docs/acceptance/2026-11-23-live.md) · [Access, backup and restore](docs/windows-trial.md)
+The green Stock Insight chart icon in the taskbar (often under **^**) belongs to the running desk. Click it to open the desk, or right-click for login details or **退出 Stock Insight** to stop the process and its collector. Closing the browser leaves collection running.
+
+The computer checks eligible public sources and keeps the evidence and research queue in `%LOCALAPPDATA%\StockInsight\personal`. A connected dot can claim a queued case, read the saved sources, perform a comparison and write back a cited report. Its schedule and destination belong to the Work account. Keep the selected computer online and connected to Work. Use **Status → Stop this desk** to stop collection for the session. Removing **Stock Insight.lnk** from the current user's Startup folder disables automatic launch. [Live verification and account-specific delivery status](docs/acceptance/2026-11-23-live.md) · [Access, backup and restore](docs/windows-trial.md)
 
 The same desk includes the TSMC supplier monitor under **Events & monitoring → TSMC supplier watch**. For a qualified instrument with a documented relationship, it checks USGS every five minutes and TWSE hourly. The case links the original evidence and any reviewed disclosure. [Supplier monitor and historical CLI reference](docs/stockwatch-operations.md)
 

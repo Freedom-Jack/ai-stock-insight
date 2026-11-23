@@ -130,7 +130,7 @@ def build_parser():
     server = actions.add_parser("serve", aliases=["run"])
     server.add_argument("--port", type=int, default=8765, choices=range(1024, 65536), metavar="PORT")
     server.add_argument("--open", action="store_true")
-    server.add_argument("--background", action="store_true", help="Save the session for the Windows sign-in launcher")
+    server.add_argument("--background", action="store_true", help="Run in the Windows taskbar notification area")
     return app
 
 
@@ -253,6 +253,8 @@ def main(argv=None):
     folder = args.data_dir or Path(".stockinsight-demo" if fixture else ".stockinsight")
     path = folder / "research.sqlite3"
     try:
+        if args.action in ("serve", "run") and args.background and os.name != "nt":
+            raise ValueError("The taskbar launcher requires a Windows desktop session.")
         with closing(connect(path, fixture=fixture)) as db:
             if args.action not in ("serve", "run"):
                 return operate(db, args)
@@ -286,7 +288,8 @@ def main(argv=None):
                 webbrowser.open(url + "/today")
             if args.background:
                 from .launcher import background_session
-                with background_session(folder, args.port, code):
+                from . import windows_tray
+                with windows_tray.running(args.port, code, request_stop), background_session(folder, args.port, code):
                     server.run(sockets=[listener])
             else:
                 server.run(sockets=[listener])
