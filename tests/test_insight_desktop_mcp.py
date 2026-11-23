@@ -10,7 +10,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from stockinsight import assistant, assistant_mcp, db, desktop_mcp, replay
+from stockinsight import assistant, assistant_mcp, db, desktop_mcp, replay, replay_client
 
 
 class Scope(unittest.TestCase):
@@ -46,6 +46,14 @@ class DesktopTransport(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(desktop_mcp.package(directory), market)
             manifest = market / "plugins/stock-insight-replay/.mcp.json"
             launch = json.loads(manifest.read_text(encoding="utf-8"))["mcpServers"]["stock-insight-replay"]
+            config = {"enabled": True, "transport": {"type": "stdio", **launch},
+                      "enabled_tools": ["monitor_health", "claim_research"], "disabled_tools": ["claim_research"]}
+            filtered = await replay_client.request(config, "tools/list", {})
+            self.assertEqual([item["name"] for item in filtered["tools"]], ["monitor_health"])
+            with self.assertRaisesRegex(ValueError, "tool is disabled"):
+                await replay_client.request(config, "claim_research", {})
+            with self.assertRaisesRegex(ValueError, "Replay is disabled"):
+                await replay_client.request({**config, "enabled": False}, "monitor_health", {})
             async with stdio_client(StdioServerParameters(**launch)) as (r, w), ClientSession(r, w) as session:
                 await session.initialize()
                 tools = {t.name for t in (await session.list_tools()).tools}
