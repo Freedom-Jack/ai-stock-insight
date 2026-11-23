@@ -99,7 +99,7 @@
       {% if o.source_status %}<small>Source result {{ o.source_status }}{% if o.cached %} · cached{% endif %}{% if o.source_checked_at %} · checked {{ o.source_checked_at }}{% endif %}{% if o.retry_at %} · retry after {{ o.retry_at }}{% endif %}</small>{% endif %}
       {% if o.document_title %}<p><a href="/companies/{{ o.instrument_id }}">{{ o.document_title }}</a></p>{% endif %}
     </article>
-  {% else %}<p>No foreground checks have run.</p>{% endfor %}
+  {% else %}<p>No source checks have run.</p>{% endfor %}
 </section>
 {% if monitor.reports %}<section><h2>Compared source reports</h2>
   {% for report in monitor.reports %}<article><strong>{{ report.ticker }} · {{ report.title }}</strong>

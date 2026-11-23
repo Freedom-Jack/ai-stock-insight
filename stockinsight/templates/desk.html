@@ -166,12 +166,13 @@
   {% for n in delivery.notices %}<p>{{ n.created_at }} · {{ n.state }} · <a href="{{ n.report_path }}">{{ n.title }}</a></p>
   {% if n.state in ('failed','uncertain') %}<form method="post" action="/actions/delivery-retry">{{ token() }}<input type="hidden" name="id" value="{{ n.id }}">{% if n.state=='uncertain' %}<label><input name="confirm" value="1" type="checkbox" required> An earlier notice may have been delivered.</label>{% endif %}<button>Retry delivery</button></form>{% endif %}{% endfor %}
   <details><summary>Delivery attempts</summary>{% for a in delivery.attempts %}<p>{{ a.started_at }} · {{ a.outcome }} · {{ a.detail or '' }}</p>{% endfor %}</details></section>
-  {% if assistant_state.enabled %}<p>{{ assistant_state.label }} · ChatGPT Work investigator · {{ assistant_state.subscriptions }} active subscriptions.</p>
-  <p>Research jobs {{ assistant_state.jobs }} · Platform event receipts {{ assistant_state.platform_events }}</p>
+  {% if assistant_state.enabled %}<p>{{ assistant_state.label }} · ChatGPT Work research connection enabled.</p>
+  <p>Research jobs {{ assistant_state.jobs }} · Active event subscriptions {{ assistant_state.subscriptions }} · Platform event receipts {{ assistant_state.platform_events }}</p>
+  <p>Check scheduled runs and their delivery in your dot under Scheduled.</p>
   {% elif assistant_state.prepared %}<p>ChatGPT Work connection prepared. Standing goals use local investigation until the connection and allowance are activated.</p>
   {% elif fixture %}<p>Offline fixture driver. Model requests per run: 0.</p>{% endif %}
   {% if not fixture and not assistant_state.enabled %}<p>Local financial research tools are connected. The on-device model is {{ 'installed' if device_ready else 'unavailable' }}. The trial sends no hosted-model requests.</p>{% endif %}
-  <p><a href="/monitor">Foreground monitoring</a> runs while the desk is open in its terminal.</p>
+  <p><a href="/monitor">Source monitoring</a> runs while the desk process is active. You can close the browser.</p>
   <h2>Data access</h2>{% for p in providers %}<details><summary>{{ p.id }}</summary><pre>{{ p | tojson(indent=2) }}</pre></details>{% endfor %}
   <h2>Jobs</h2>{% for s in states %}<p>{{ s.state }} · {{ s.n }}</p>{% else %}<p>No jobs yet.</p>{% endfor %}
   {% if can_stop %}<details><summary>Stop this desk</summary><form method="post" action="/actions/stop">{{ token() }}<input type="hidden" name="confirm" value="yes"><p>Pending schedules resume the next time you start this workspace.</p><button>Stop Stock Insight</button></form></details>{% endif %}

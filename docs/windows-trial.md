@@ -2,14 +2,14 @@
 
 ## Start, stop and restart
 
-Open PowerShell in the implementation worktree and run the launcher. Double-clicking the same file also works.
+Open PowerShell in the main checkout and run the launcher. Double-clicking the same file also works.
 
 ```powershell
-Set-Location 'E:\OpenAI\ChatGPTDesktop\worktrees\2541\ai-stock-insight'
+Set-Location 'E:\Project\ai-stock-insight'
 .\Start-StockInsight.cmd
 ```
 
-The launcher opens **http://127.0.0.1:8765/today**. Enter username `research` and the password printed in the terminal. Keep that terminal open for scheduled checks. Use **Ctrl+C** or **Status → Stop this desk → Stop Stock Insight** for a graceful stop. Restart with the same command. Each start issues a fresh password. To select another port use `--port 8770`. Add `--no-browser` to print the address without opening a tab.
+The launcher opens **http://127.0.0.1:8765/today**. Enter username `research` and the password printed in the terminal. For unattended collection, run `.\ops\windows\Enable-StockInsightAtSignIn.ps1` once. It starts the desk immediately and creates a Startup shortcut for the current user. Once the background listener is running, close the launcher or browser at any time. A foreground-only session needs its terminal to stay open. Use **Status → Stop this desk → Stop Stock Insight** for a graceful stop. Each new listener issues a fresh password. To select another port use `--port 8770`. Add `--no-browser` to print the address without opening a tab.
 
 ## First use
 
@@ -22,7 +22,7 @@ The launcher opens **http://127.0.0.1:8765/today**. Enter username `research` an
    ```
 
 2. In **Goals**, adopt **Keep me prepared for important developments affecting my watchlist.** The desk selects sources for eligible listings, prepares for upcoming events and investigates relevant changes. Defaults are a weekday summary by 08:30 Toronto time and three event investigations per goal per UTC day. Goal edits preserve earlier versions. Set a specific listing or an accepted theme for narrower coverage. **Ranked research agenda** shows active questions, approaching events, and dossier work.
-3. Close the browser and keep the launcher running in your signed-in Windows session. **Status → Send a test notice** checks the desktop route. A new report also queues a notice. Open its private link or return to **Today → report** to inspect the dated sources, rationale, alternatives and future observations. Marking it reviewed is a separate action. The desk runs while the computer is awake. On restart it records missed deadlines and groups catch-up work. The app's visible Windows notification requires an interactive desktop session.
+3. Keep the desk running in your signed-in Windows session. **Status → Send a test notice** checks the desktop route. A new report also queues a notice. Open its private link or return to **Today → report** to inspect the dated sources, rationale, alternatives and future observations. Marking it reviewed is a separate action. The desk runs while the computer is awake. On restart it records missed deadlines and groups catch-up work. The app's visible Windows notification requires an interactive desktop session.
 4. For an immediate investigation, open **Research**. Ask **Compare Microsoft GAAP revenue for Q1 FY27 and Q1 FY26.** The issuer published 92,279 and 77,673 USD million respectively. Click a citation to inspect the original source and retained qualification. For a historical comparison ask **Compare NVIDIA revenue for Q2 FY25 and Q1 FY25.** For a dated newsroom lookup ask **Which NVIDIA press releases are in the saved feed?**
 5. On a case, **Add a note** saves a judgment, intention, reported action or review. **Investigate again** creates a revision. **Plan a follow-up question** saves a linked question. A new eligible edition of cited financial evidence can reopen the case. For a primary transcript choose **Attach a qualifying or contrary primary passage**, select the claim and document, and supply the exact passage and reason. **Upcoming research** and **Journal** retain personal review conditions and authorship.
 6. **Events & monitoring** shows expected, running, completed, failed and missed checks along with their actual receipts. A manual override takes precedence over goal-managed scheduling. **Research → Financial and event research methods** provides conditional valuations, dated expectations, peer comparisons, historical cohorts, closing-price windows and JSON reports. **Companies & themes → Review evidence** lets you approve or revoke a source-backed exposure. [Versioned methods and data-entry examples](local-research-methods-v1.md)
@@ -59,7 +59,7 @@ To transfer selected research, open a case and select **Export this case and its
 
 ## Update or reinstall
 
-Stop the desk, make the verified backup above, and select the intended local code revision. In this checkout run `uv sync --locked --group browser-test` and restart. If the model assets need reinstalling, run the commands below. The install fetches the free, hash-pinned model and runtime on demand. It can reuse verified downloads. They live under the code checkout at `.stockinsight\models\qwen2.5-0.5b`, separate from personal data.
+Stop the desk, make the verified backup above, and select the intended local code revision. For a connected personal desk, run `uv sync --locked --extra fiscal` to install the locked MCP dependency. Add `--group browser-test` for browser tests. Restart the background desk with the sign-in script above. If the model assets need reinstalling, run the commands below. The install fetches the free, hash-pinned model and runtime on demand. It can reuse verified downloads. They live under the code checkout at `.stockinsight\models\qwen2.5-0.5b`, separate from personal data.
 
 ```powershell
 .\.venv\Scripts\python.exe -m stockinsight.local_model install
