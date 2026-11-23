@@ -53,6 +53,15 @@ def cma(title="CMA investigates Microsoft over subscription plans"):
 
 
 class CalendarSourceTests(unittest.TestCase):
+    def test_market_calendar_does_not_require_a_company_filing_identity(self):
+        from stockinsight import universe
+        universe.import_snapshot(self.conn, b"ticker,listing_exchange,security_type,currency\nEXAMPLE,NASDAQ,STK,USD",
+                                 complete=True, source_id="macro-test")
+        item = next(i for i in universe.universe(self.conn)["instruments"] if i["ticker"] == "EXAMPLE")
+        self.assertTrue(sources.eligible(item, "fed_calendar"))
+        self.assertFalse(sources.eligible(item, "sec_filing"))
+        self.assertFalse(sources.eligible({**item, "resolution_status": "unresolved"}, "fed_calendar"))
+
     def setUp(self):
         self.conn, self.instruments = workspace()
         self.addCleanup(self.conn.close)

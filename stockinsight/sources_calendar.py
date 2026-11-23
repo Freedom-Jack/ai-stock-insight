@@ -76,7 +76,7 @@ def eligible(listing, route):
         return cik in (MICROSOFT, NVIDIA)
     if route in ("fed_calendar", "bls_calendar"):
         return bool(
-            cik
+            (cik or listing.get("resolution_status") == "identified_listing")
             and listing.get("currency") == "USD"
             and listing.get("listing_exchange")
             in ("NASDAQ", "NYSE", "AMEX", "NYSEAMERICAN", "ARCA", "NYSEARCA", "BATS", "CBOE")

@@ -789,7 +789,8 @@ def capture_public(conn, instrument, provider="issuer"):
     identity = lookup(conn, instrument["id"])
     instrument_id = identity["id"]
     cik = identity.get("cik")
-    if not cik or not re.fullmatch(r"\d{10}", cik):
+    market_calendar = provider in ("fed_calendar", "bls_calendar") and sources_calendar.eligible(identity, provider)
+    if not market_calendar and (not cik or not re.fullmatch(r"\d{10}", cik)):
         return {
             "status": "unsupported",
             "message": "Source capture requires a resolved issuer CIK.",

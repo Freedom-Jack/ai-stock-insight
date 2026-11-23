@@ -102,6 +102,40 @@ def _previous_quake(db, incident):
     }
 
 
+def incident_events(db, version_id):
+    """Keep a listing's distinct public disclosures together without superseding an earthquake."""
+    return [row[0] for row in db.execute("""
+        SELECT DISTINCT e.event_id FROM supplier_event_links original
+        JOIN supplier_watch_entries w ON w.sequence=original.entry_sequence
+        JOIN supplier_watch_entries next ON next.incident=w.incident
+        JOIN supplier_event_links l ON l.entry_sequence=next.sequence AND l.instrument_id=original.instrument_id
+        JOIN event_versions e ON e.id=l.version_id WHERE original.version_id=?""", (version_id,))]
+
+
+def public_links(db, ref):
+    """Return the public relationship and location references frozen with this observation."""
+    row = db.execute("""SELECT w.links,i.ticker FROM event_versions e
+        JOIN supplier_event_links l ON l.version_id=e.id JOIN supplier_watch_entries w ON w.sequence=l.entry_sequence
+        JOIN instruments i ON i.id=l.instrument_id WHERE e.source_ref=?""", (ref,)).fetchone()
+    fields = ("site", "site_url", "site_locator", "coordinates_url", "coordinate_locator",
+              "source_url", "locator", "scope", "limit", "distance_km", "checked_on")
+    if not row:
+        return []
+    return [{k: link[k] for k in fields if k in link} for link in json.loads(row["links"])
+            if link["ticker"] == row["ticker"]]
+
+
+def source_health(db):
+    settings = _configuration(db)
+    if not settings or not settings["enabled"]:
+        return []
+    return [dict(row) for row in db.execute("""
+        SELECT d.source AS provider, CASE WHEN h.error IS NOT NULL THEN 'error'
+            WHEN h.last_ok IS NOT NULL THEN 'ok' ELSE 'pending' END AS status,
+            h.attempt AS finished_at,h.last_ok,d.due_at AS next_at
+        FROM supplier_due d LEFT JOIN feed_health h USING(source) ORDER BY d.source""")]
+
+
 def _quake_text(entry, links, withdrawn):
     if withdrawn:
         return (
@@ -213,12 +247,19 @@ def tick(db, *, clock=now):
     if not source or not _scope(db):
         return None
     error, retry_at = None, None
+    retry_interval = DEFAULT_INTERVAL
     try:
         if source == "USGS":
             payload = usgs.fetch_feed()
             stamp = instant(clock())
             generated = usgs.generated_at(payload)
-            if datetime.fromisoformat(stamp) - datetime.fromisoformat(generated) > timedelta(minutes=15):
+            age = datetime.fromisoformat(stamp) - datetime.fromisoformat(generated)
+            if age < timedelta(0):
+                # A source clock a few seconds ahead can otherwise fail at the same
+                # point in every five-minute cycle. Keep the original receipt time.
+                retry_interval += 30
+                raise ValueError("USGS feed generated after the observation time")
+            if age > timedelta(minutes=15):
                 raise ValueError("USGS feed is over 15 minutes old.")
             batch = usgs.parse_feed(payload, stamp)
             watchlist = load_watchlist(WATCHLIST)
@@ -246,7 +287,7 @@ def tick(db, *, clock=now):
             if _configuration(db) != configured or _due(db, stamp) != source:
                 return None
             store.record_health(db, source, stamp, error=error or "Source check failed.")
-            _advance(db, source, stamp, DEFAULT_INTERVAL, retry_at)
+            _advance(db, source, stamp, retry_interval, retry_at)
     return source
 
 

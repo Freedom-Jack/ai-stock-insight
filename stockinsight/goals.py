@@ -260,8 +260,18 @@ def _configure(db, key, interval, enabled, stamp, old):
 
 
 def coverage(db, plan, start, stamp):
+    from . import supplier
     entries = []
+    shared = supplier.source_health(db) if not is_fixture(db) else []
+    scoped = supplier._scope(db) if shared else {}
     for item, required in _requirements(db, plan):
+        if item["id"] in scoped.get(item["ticker"], ()):
+            for receipt in shared:
+                in_window = bool(receipt["finished_at"] and start <= receipt["finished_at"] <= stamp)
+                entries.append({"ticker": item["ticker"], "provider": receipt["provider"],
+                                "state": receipt["status"] if in_window else "unchecked",
+                                "enabled": True, "interval_minutes": supplier.INTERVALS[receipt["provider"]] // 60,
+                                "receipt": receipt if in_window else None})
         if (
             not is_fixture(db)
             and "sec_filing" not in required

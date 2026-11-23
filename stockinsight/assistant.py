@@ -5,7 +5,7 @@ import json
 import secrets
 from datetime import datetime, timedelta
 
-from . import delivery, evidence, exposure, goals, methods, universe
+from . import delivery, evidence, exposure, goals, methods, supplier, universe
 from .db import instant, is_fixture, now, uid, write
 
 SCHEMA = """
@@ -48,7 +48,15 @@ PUBLIC = {
     "sec",
     "sec_filing",
     "historical_filing",
+    "usgs_earthquake",
+    "tsmc_earthquake_disclosure",
 }
+
+
+def can_research(db, version):
+    row = db.execute("""SELECT d.origin FROM event_versions e JOIN evidence_passages p ON p.id=e.source_ref
+                       JOIN documents d ON d.id=p.document_id WHERE e.id=?""", (version,)).fetchone()
+    return bool(row and row[0] in PUBLIC)
 
 
 def profile(db):
@@ -100,17 +108,19 @@ def enqueue(db, work, stamp):
         ).rowcount
         if not changed:
             return
+        related = supplier.incident_events(db, work["event_version_id"]) or [v["event_id"]]
+        placeholders = ",".join("?" for _ in related)
         previous = db.execute(
-            """SELECT j.case_id,j.id FROM assistant_jobs j JOIN goal_dispatch d ON d.id=j.dispatch_id
-                   JOIN goal_plans p ON p.id=d.plan_id WHERE j.event_id=? AND j.instrument_id=? AND p.goal_id=?
+            f"""SELECT j.case_id,j.id FROM assistant_jobs j JOIN goal_dispatch d ON d.id=j.dispatch_id
+                   JOIN goal_plans p ON p.id=d.plan_id WHERE j.event_id IN ({placeholders}) AND j.instrument_id=? AND p.goal_id=?
                    ORDER BY j.rowid DESC LIMIT 1""",
-            (v["event_id"], work["instrument_id"], work["goal_id"]),
+            (*related, work["instrument_id"], work["goal_id"]),
         ).fetchone()
         case = previous["case_id"] if previous else work["id"]
         if previous:
             db.execute(
-                "UPDATE assistant_jobs SET state='superseded' WHERE case_id=? AND state IN ('pending','running')",
-                (case,),
+                "UPDATE assistant_jobs SET state='superseded' WHERE case_id=? AND event_id=? AND state IN ('pending','running')",
+                (case, v["event_id"]),
             )
             db.execute(
                 """UPDATE goal_dispatch SET state='superseded' WHERE state='awaiting_assistant' AND
@@ -288,7 +298,7 @@ def _passage(db, job, ref):
     p = evidence.get(db, subject, ref, job["cutoff"], fixture=is_fixture(db), commit_seq=job["frozen_seq"])
     if p["origin"] not in PUBLIC:
         raise ValueError("Passage outside the public research scope.")
-    return {
+    public = {
         k: p[k]
         for k in (
             "id",
@@ -307,6 +317,9 @@ def _passage(db, job, ref):
             "instrument_id",
         )
     }
+    if p["origin"] == "usgs_earthquake":
+        public["supporting_sources"] = supplier.public_links(db, ref)
+    return public
 
 
 def sources(db, job_id, worker_key):

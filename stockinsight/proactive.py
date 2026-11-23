@@ -616,7 +616,7 @@ def tick(db, *, at=None):
     if not work:
         return None
     try:
-        if work["decision_id"] and assistant.profile(db)["enabled"]:
+        if work["decision_id"] and assistant.profile(db)["enabled"] and assistant.can_research(db, work["event_version_id"]):
             assistant.enqueue(db, work, stamp)
             return work["id"]
         body, method_id, runtime, prior = _run(db, work, stamp)

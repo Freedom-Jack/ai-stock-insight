@@ -56,6 +56,9 @@ def health(db):
         )
     ]
     result["interrupted_attempts"] = db.execute("SELECT count(*) FROM assistant_interruptions").fetchone()[0]
+    if not is_fixture(db):
+        from . import supplier
+        result["sources"].extend(supplier.source_health(db))
     result["pending"] = []
     for row in db.execute(
         "SELECT id,case_id FROM assistant_jobs WHERE state IN ('pending','running') ORDER BY rowid LIMIT 40"
