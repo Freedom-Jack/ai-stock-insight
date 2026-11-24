@@ -1,0 +1,234 @@
+{
+  "server": {
+    "name": "tickerinside",
+    "title": "TickerInside",
+    "version": "1.14.0",
+    "websiteUrl": "https://tickerinside.com/agent/",
+    "icons": [
+      {
+        "src": "https://tickerinside.com/apple-touch-icon.png",
+        "mimeType": "image/png",
+        "sizes": [
+          "180x180"
+        ]
+      }
+    ]
+  },
+  "tool": "get_etf_portfolio_lookthrough",
+  "arguments": {
+    "positions": [
+      {
+        "ticker": "SPY",
+        "amount": 50
+      },
+      {
+        "ticker": "XLK",
+        "amount": 30
+      }
+    ],
+    "currency": "USD",
+    "top": 10
+  },
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"page_url\":null,\"priced\":true,\"portfolio_value\":80,\"currency\":\"USD\",\"prices_as_of\":\"2026-11-20\",\"funds\":2,\"distinct_companies\":505,\"top_10_weight_pct\":43.5,\"looked_through_pct\":100,\"holdings_as_of\":{\"SPY\":\"2026-11-19\",\"XLK\":\"2026-11-19\"},\"holdings_age_days\":{\"SPY\":4,\"XLK\":4},\"holdings_source\":{\"SPY\":\"issuer file\",\"XLK\":\"issuer file\"},\"companies\":[{\"ticker\":\"AAPL\",\"weight_pct\":11.626,\"weight_pct_2dp\":11.63,\"through\":[{\"fund\":\"XLK\",\"weight_pct\":6.4853},{\"fund\":\"SPY\",\"weight_pct\":5.1406}],\"value\":9.3},{\"ticker\":\"MSFT\",\"weight_pct\":8.441,\"weight_pct_2dp\":8.44,\"through\":[{\"fund\":\"XLK\",\"weight_pct\":4.7085},{\"fund\":\"SPY\",\"weight_pct\":3.7322}],\"value\":6.75},{\"ticker\":\"NVDA\",\"weight_pct\":8.059,\"weight_pct_2dp\":8.06,\"through\":[{\"fund\":\"XLK\",\"weight_pct\":4.4954},{\"fund\":\"SPY\",\"weight_pct\":3.5633}],\"value\":6.45},{\"ticker\":\"AVGO\",\"weight_pct\":3.762,\"weight_pct_2dp\":3.76,\"through\":[{\"fund\":\"XLK\",\"weight_pct\":2.0986},{\"fund\":\"SPY\",\"weight_pct\":1.6636}],\"value\":3.01},{\"ticker\":\"AMD\",\"weight_pct\":2.645,\"weight_pct_2dp\":2.65,\"through\":[{\"fund\":\"XLK\",\"weight_pct\":1.8396},{\"fund\":\"SPY\",\"weight_pct\":0.8055}],\"value\":2.12},{\"ticker\":\"AMZN\",\"weight_pct\":2.548,\"weight_pct_2dp\":2.55,\"through\":[{\"fund\":\"SPY\",\"weight_pct\":2.5481}],\"value\":2.04},{\"ticker\":\"MU\",\"weight_pct\":2.103,\"weight_pct_2dp\":2.1,\"through\":[{\"fund\":\"XLK\",\"weight_pct\":1.3164},{\"fund\":\"SPY\",\"weight_pct\":0.7866}],\"value\":1.68},{\"ticker\":\"GOOGL\",\"weight_pct\":1.614,\"weight_pct_2dp\":1.61,\"through\":[{\"fund\":\"SPY\",\"weight_pct\":1.6139}],\"value\":1.29},{\"ticker\":\"CSCO\",\"weight_pct\":1.338,\"weight_pct_2dp\":1.34,\"through\":[{\"fund\":\"XLK\",\"weight_pct\":0.9617},{\"fund\":\"SPY\",\"weight_pct\":0.3766}],\"value\":1.07},{\"ticker\":\"META\",\"weight_pct\":1.326,\"weight_pct_2dp\":1.33,\"through\":[{\"fund\":\"SPY\",\"weight_pct\":1.3262}],\"value\":1.06}],\"source\":{\"provider\":\"TickerInside\",\"links\":[{\"ticker\":\"SPY\",\"page_url\":\"https://tickerinside.com/etf/spy/\",\"api_url\":\"https://tickerinside.com/api/v1/fund/spy.json\",\"holdings_source\":\"issuer file\"},{\"ticker\":\"XLK\",\"page_url\":\"https://tickerinside.com/etf/xlk/\",\"api_url\":\"https://tickerinside.com/api/v1/fund/xlk.json\",\"holdings_source\":\"issuer file\"}],\"license\":\"CC BY 4.0\",\"cite_as\":\"TickerInside (https://tickerinside.com/), look-through of SPY and XLK, from the issuers' holdings files, dated as shown.\"},\"note\":\"Measurement, not investment advice.\"}"
+      }
+    ],
+    "structuredContent": {
+      "page_url": null,
+      "priced": true,
+      "portfolio_value": 80,
+      "currency": "USD",
+      "prices_as_of": "2026-11-20",
+      "funds": 2,
+      "distinct_companies": 505,
+      "top_10_weight_pct": 43.5,
+      "looked_through_pct": 100,
+      "holdings_as_of": {
+        "SPY": "2026-11-19",
+        "XLK": "2026-11-19"
+      },
+      "holdings_age_days": {
+        "SPY": 4,
+        "XLK": 4
+      },
+      "holdings_source": {
+        "SPY": "issuer file",
+        "XLK": "issuer file"
+      },
+      "companies": [
+        {
+          "ticker": "AAPL",
+          "weight_pct": 11.626,
+          "weight_pct_2dp": 11.63,
+          "through": [
+            {
+              "fund": "XLK",
+              "weight_pct": 6.4853
+            },
+            {
+              "fund": "SPY",
+              "weight_pct": 5.1406
+            }
+          ],
+          "value": 9.3
+        },
+        {
+          "ticker": "MSFT",
+          "weight_pct": 8.441,
+          "weight_pct_2dp": 8.44,
+          "through": [
+            {
+              "fund": "XLK",
+              "weight_pct": 4.7085
+            },
+            {
+              "fund": "SPY",
+              "weight_pct": 3.7322
+            }
+          ],
+          "value": 6.75
+        },
+        {
+          "ticker": "NVDA",
+          "weight_pct": 8.059,
+          "weight_pct_2dp": 8.06,
+          "through": [
+            {
+              "fund": "XLK",
+              "weight_pct": 4.4954
+            },
+            {
+              "fund": "SPY",
+              "weight_pct": 3.5633
+            }
+          ],
+          "value": 6.45
+        },
+        {
+          "ticker": "AVGO",
+          "weight_pct": 3.762,
+          "weight_pct_2dp": 3.76,
+          "through": [
+            {
+              "fund": "XLK",
+              "weight_pct": 2.0986
+            },
+            {
+              "fund": "SPY",
+              "weight_pct": 1.6636
+            }
+          ],
+          "value": 3.01
+        },
+        {
+          "ticker": "AMD",
+          "weight_pct": 2.645,
+          "weight_pct_2dp": 2.65,
+          "through": [
+            {
+              "fund": "XLK",
+              "weight_pct": 1.8396
+            },
+            {
+              "fund": "SPY",
+              "weight_pct": 0.8055
+            }
+          ],
+          "value": 2.12
+        },
+        {
+          "ticker": "AMZN",
+          "weight_pct": 2.548,
+          "weight_pct_2dp": 2.55,
+          "through": [
+            {
+              "fund": "SPY",
+              "weight_pct": 2.5481
+            }
+          ],
+          "value": 2.04
+        },
+        {
+          "ticker": "MU",
+          "weight_pct": 2.103,
+          "weight_pct_2dp": 2.1,
+          "through": [
+            {
+              "fund": "XLK",
+              "weight_pct": 1.3164
+            },
+            {
+              "fund": "SPY",
+              "weight_pct": 0.7866
+            }
+          ],
+          "value": 1.68
+        },
+        {
+          "ticker": "GOOGL",
+          "weight_pct": 1.614,
+          "weight_pct_2dp": 1.61,
+          "through": [
+            {
+              "fund": "SPY",
+              "weight_pct": 1.6139
+            }
+          ],
+          "value": 1.29
+        },
+        {
+          "ticker": "CSCO",
+          "weight_pct": 1.338,
+          "weight_pct_2dp": 1.34,
+          "through": [
+            {
+              "fund": "XLK",
+              "weight_pct": 0.9617
+            },
+            {
+              "fund": "SPY",
+              "weight_pct": 0.3766
+            }
+          ],
+          "value": 1.07
+        },
+        {
+          "ticker": "META",
+          "weight_pct": 1.326,
+          "weight_pct_2dp": 1.33,
+          "through": [
+            {
+              "fund": "SPY",
+              "weight_pct": 1.3262
+            }
+          ],
+          "value": 1.06
+        }
+      ],
+      "source": {
+        "provider": "TickerInside",
+        "links": [
+          {
+            "ticker": "SPY",
+            "page_url": "https://tickerinside.com/etf/spy/",
+            "api_url": "https://tickerinside.com/api/v1/fund/spy.json",
+            "holdings_source": "issuer file"
+          },
+          {
+            "ticker": "XLK",
+            "page_url": "https://tickerinside.com/etf/xlk/",
+            "api_url": "https://tickerinside.com/api/v1/fund/xlk.json",
+            "holdings_source": "issuer file"
+          }
+        ],
+        "license": "CC BY 4.0",
+        "cite_as": "TickerInside (https://tickerinside.com/), look-through of SPY and XLK, from the issuers' holdings files, dated as shown."
+      },
+      "note": "Measurement, not investment advice."
+    },
+    "isError": false
+  }
+}

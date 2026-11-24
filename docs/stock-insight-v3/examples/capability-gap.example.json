@@ -1,0 +1,51 @@
+{
+  "example_metadata": {
+    "synthetic": true,
+    "note": "Proposed application fixture. No account, denied request, historical estimate or price observation is asserted to have occurred."
+  },
+  "capability_gap": {
+    "schema_version": "1.0",
+    "id": "gap_pre_release_street_consensus_example",
+    "case_id": "case_earnings_example",
+    "question": "How did actual EPS and revenue compare with Street expectations available immediately before this release?",
+    "capability": "expectations.historical_street_consensus",
+    "required_semantics": {
+      "entity": "resolved company and listing for the selected earnings event",
+      "metrics": ["EPS", "revenue"],
+      "period": "the event's fiscal quarter",
+      "basis": "compatible with reported actuals; retain GAAP or adjusted definition",
+      "units": "explicit currency, scale and per-share basis",
+      "availability": "documented as available before the event's release timestamp",
+      "history": "snapshot or reconstructable revisions; date-only precision must be assessed"
+    },
+    "status": "not_entitled",
+    "lifecycle": "open",
+    "attempted_capabilities": [
+      {
+        "provider": "illustrative_configured_provider",
+        "capability_id": "capability_street_estimates_example",
+        "receipt_id": "receipt_fixture_access_denied",
+        "outcome": "not_entitled"
+      }
+    ],
+    "fallback_used": "Compare issuer guidance and prior periods, with consensus comparison explicitly unavailable.",
+    "analytical_impact": "Cannot quantify a defensible actual-versus-pre-release-Street surprise from the configured data.",
+    "reuse_candidates": [
+      {
+        "provider": "Fiscal.ai Street Consensus",
+        "evidence_url": "https://docs.fiscal.ai/docs/api-reference",
+        "limitation": "Current documentation excludes personal API plans; this is not an automatic upgrade option for the current account."
+      },
+      {
+        "provider": "Another already-authorized historical-estimates source",
+        "evidence_url": null,
+        "limitation": "Provider, entitlement and availability semantics must be established."
+      }
+    ],
+    "proposed_remedy": "Evaluate existing entitled sources; otherwise begin prospective snapshots where permitted and retain the historical gap.",
+    "access_cost_permission_implications": "New data access or spending requires an explicit configuration decision; no automatic purchase or credential expansion.",
+    "acceptance_example": "Given a permitted test earnings event, retrieve a compatible estimate whose documented availability precedes release; preserve source/version and compare against matching actuals. Reject post-release or temporally ambiguous estimates for this fixed-cutoff comparison.",
+    "priority_reason": "Recurring limitation in earnings interpretation; value depends on frequency and obtainable history.",
+    "linked_development_item_id": null
+  }
+}

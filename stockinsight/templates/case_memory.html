@@ -1,0 +1,13 @@
+{% if memory.updates %}<h2>Evidence changes</h2>{% for u in memory.updates %}<article>
+<p>{{ u.relation | replace('_',' ') }} · {{ u.state }} · Revision {{ u.revision }}, claim {{ u.claim_no + 1 }}</p>
+<p>{{ u.rationale }}</p><small>{{ u.origin }} · {{ u.created_at }} · Evidence <code>{{ u.new_ref or u.document_id }}</code></small></article>{% endfor %}{% endif %}
+{% if case.briefs and memory.sources %}{% set b=case.briefs[0] %}{% if b.method.startswith('sourced_company_review') %}
+<details><summary>Attach a qualifying or contrary primary passage</summary>
+<form method="post" action="/actions/memory-attach">{{ token() }}
+<input type="hidden" name="case" value="{{ case.id }}"><input type="hidden" name="brief" value="{{ b.id }}">
+<label>Affected claim <select name="claim">{% for c in b.body.claims %}{% if c.evidence_refs %}<option value="{{ loop.index0 }}">{{ c.text | truncate(105) }}</option>{% endif %}{% endfor %}</select></label>
+<label>Issuer document <select name="url">{% for s in memory.sources %}<option value="{{ s.url }}">{{ s.title }}</option>{% endfor %}</select></label>
+<label>Exact passage <textarea name="quote" required maxlength="400"></textarea></label>
+<label>Relationship <select name="relation"><option value="qualification">Qualification</option><option value="counterevidence">Counterevidence</option></select></label>
+<label>How this affects the claim <textarea name="rationale" required maxlength="1000"></textarea></label><button>Verify passage and revisit claim</button>
+</form></details>{% endif %}{% endif %}

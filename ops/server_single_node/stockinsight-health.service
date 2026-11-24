@@ -1,0 +1,18 @@
+[Unit]
+Description=Check private desk and report liveness to the independently configured observer
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=stockinsight
+Group=stockinsight
+WorkingDirectory=/opt/stockinsight
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=/etc/stockinsight/health.env
+ExecStart=/opt/stockinsight/.venv/bin/python -m stockinsight.server_profile heartbeat
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+UMask=0077
+TimeoutStartSec=30

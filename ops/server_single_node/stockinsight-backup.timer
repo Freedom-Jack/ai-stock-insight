@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily verified Stock Insight backup with one overdue run after absence
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+Persistent=yes
+
+[Install]
+WantedBy=timers.target

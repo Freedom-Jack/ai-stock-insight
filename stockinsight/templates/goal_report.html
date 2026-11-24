@@ -1,0 +1,30 @@
+<p><a href="/goals">Standing goals</a> · {{ report.kind }} · {{ report.body.status }}</p><h1>{{ report.body.title }}</h1>
+<p class="meta">{{ report.objective }} · Finished {{ report.ended_at }}</p><p>{{ report.body.summary }}</p>
+{% if report.reason %}<h2>Why this reached you</h2><p>{{ report.reason }}</p>{% endif %}
+{% if report.body.followthrough %}<p>Follow-up source check · {{ report.body.followthrough.status }}{% if report.body.followthrough.receipt_id %} · <code>{{ report.body.followthrough.receipt_id }}</code>{% endif %}</p>{% endif %}
+{% if assistant_history %}<h2>Assistant case history</h2>{% for b in assistant_history %}<section><p>{{ b.label }} · {{ b.cutoff }} · <code>{{ b.case_id }}</code></p><h3>{{ b.question }}</h3>
+<p>{{ b.summary }}</p><p>Conditional interpretation · {{ b.hypothesis }}</p><p>Alternative · {{ b.alternative }}</p>
+{% for c in b.citations %}<details><summary>{{ c.title }} · {{ c.locator }}</summary><blockquote>{{ c.text }}</blockquote><p>{% if c.source_url.startswith('https://') %}<a href="{{ c.source_url }}" rel="noreferrer">Original source</a>{% else %}Synthetic source{% endif %} · <code>{{ c.version_hash }}</code></p>
+{% for s in c.supporting_sources %}<p>{{ s.site }}
+{% if s.source_url and s.source_url.startswith('https://') %} · <a href="{{ s.source_url }}" rel="noreferrer">Issuer relationship</a> {{ s.locator }}{% endif %}
+{% if s.site_url and s.site_url.startswith('https://') %} · <a href="{{ s.site_url }}" rel="noreferrer">Facility</a> {{ s.site_locator }}{% endif %}
+{% if s.coordinates_url and s.coordinates_url.startswith('https://') %} · <a href="{{ s.coordinates_url }}" rel="noreferrer">Coordinates</a> {{ s.coordinate_locator }}{% endif %}</p>{% endfor %}
+</details>{% endfor %}
+{% for c in b.calculations %}<p>{{ c.baseline_value }} → {{ c.current_value }} {{ c.unit }} ({{ c.percent_change }}%)</p>{% endfor %}
+{% for gap in b.gaps %}<p>{{ gap }}</p>{% endfor %}{% for n in b.next_observations %}<p>{{ n }}</p>{% endfor %}</section>{% endfor %}{% endif %}
+{% if method %}<h2>Evidence and interpretation</h2>
+{% for c in method.body.claims if c.text != report.body.summary %}<p>{{ c.text }}</p>{% endfor %}
+{% for e in report.body.exposures %}<p>Reviewed {{ e.relation | replace('_',' ') }} relationship for {{ e.ticker }} · {{ e.entity }}</p><blockquote>{{ e.quotation }}</blockquote><p>{{ e.reason }} · <a href="/exposures">Relationship evidence</a> · <code>{{ e.passage_id }}</code></p>{% endfor %}
+{% for c in method.body.citations %}<details><summary>{{ c.title }} · {{ c.published_at or c.available_at }}</summary><blockquote>{{ c.text }}</blockquote>
+{% if c.url and c.url.startswith('https://') %}<a href="{{ c.url }}" rel="noreferrer">Original source</a>{% endif %}<p class="meta">Captured {{ c.received_at }} · {{ c.locator }}<br>Version <code>{{ c.version_hash }}</code></p></details>{% endfor %}
+<h2>Alternatives and gaps</h2>{% for s in method.body.alternatives+report.body.gaps %}<p>{{ s }}</p>{% endfor %}
+<p><a href="/methods?instrument_id={{ report.instrument_id }}#{{ method.id }}">Full method, calculations and revisions</a></p>
+{% endif %}
+{% if report.body.coverage is defined %}<h2>Coverage</h2><p>{{ report.body.interval | join(' to ') }} · {{ report.body.missed }} missed obligations</p>
+{% for c in report.body.coverage %}<p>{{ c.ticker }} · {{ c.provider }} · {{ c.state }}{% if c.receipt %} · {{ c.receipt.finished_at }}{% if c.receipt.id %} · <code>{{ c.receipt.id }}</code>{% endif %}{% endif %}</p>{% else %}<p>No eligible watchlist source was checked.</p>{% endfor %}
+{% for r in report.body.reports %}<p><a href="/goals/reports/{{ r.id }}">{{ r.title }}</a></p>{% endfor %}{% endif %}
+{% if report.context_reads %}<h2>Earlier questions revisited</h2>{% for f in report.context_reads %}<p><a href="/goals/reports/{{ f.report_id }}">{{ f.question }}</a></p>{% endfor %}{% endif %}
+{% if report.followups %}<h2>Next observations</h2>{% for f in report.followups %}<p>{{ f.question }}</p>{% endfor %}{% endif %}
+{% if report.related_reports %}<h2>Other listings in this calendar notice</h2>{% for r in report.related_reports %}<p><a href="/goals/reports/{{ r.id }}">{{ r.title }}</a></p>{% endfor %}{% endif %}
+<details><summary>Execution details</summary><pre>{{ report.runtime | tojson(indent=2) }}</pre><code>{{ report.id }}</code></details>
+{% if report.reviewed_at %}<p>Reviewed {{ report.reviewed_at }}</p>{% else %}<form method="post" action="/actions/goal-review">{{ token() }}<input type="hidden" name="report" value="{{ report.id }}"><button>Mark report reviewed</button></form>{% endif %}

@@ -1,0 +1,60 @@
+<h1>Research agenda</h1>
+<section>
+  <h2>Ranked inquiries</h2>
+  {% if agenda['items'] %}
+  <ol>{% for item in agenda['items'] %}
+    <li><article>
+      <small>{{ item.ticker }} · {{ item.kind | replace('_', ' ') }}</small>
+      <h3>{{ item.question }}</h3>
+      <p>{{ item.reason }}</p><p><strong>Method</strong> {{ item.method }}</p>
+      <p><strong>Next observation</strong> {{ item.next_observation }}</p>
+      {% if item.excerpt %}<details><summary>Saved schedule observation</summary><blockquote>{{ item.excerpt }}</blockquote>
+      <small>{{ item.source_ref }}</small>{% if item.source_url %}<p><a href="{{ item.source_url }}" rel="noreferrer">Publisher source</a></p>{% endif %}</details>{% endif %}
+      <a href="{{ item.href }}">Open research record</a>
+    </article></li>
+  {% endfor %}</ol>
+  {% else %}<p>No pending inquiries in active standing-goal scopes. <a href="/goals">Open standing goals</a></p>{% endif %}
+  {% if agenda.revisions %}<details><summary>Recent agenda editions</summary>
+    {% for edition in agenda.revisions %}<p><time>{{ edition.created_at }}</time></p>
+    <ol>{% for item in edition['items'] %}<li>{{ item.ticker }} · {{ item.question }}</li>
+    {% else %}<li>No inquiries in the current scope.</li>{% endfor %}</ol>{% endfor %}
+  </details>{% endif %}
+</section>
+<section>
+  <h2>Dossier refreshes</h2>
+  <p>A newly saved issuer headline or verified financial observation can trigger one local rebuild per hour across the desk and one per listing per 24 hours.</p>
+  {% for r in agenda.refreshes %}<p>{{ r.ticker }} · {{ r.started_at }} ·
+    {% if r.report_id %}<a href="/methods?instrument_id={{ r.instrument_id }}#{{ r.report_id }}">Open saved dossier</a>
+    {% else %}{{ r.state }}{% if r.detail %} · {{ r.detail }}{% endif %}{% endif %}</p>
+  {% else %}<p>No automatic dossier refreshes in the current scope.</p>{% endfor %}
+</section>
+<section>
+  <h2>Method proposals</h2>
+  {% if agenda.reports %}<details><summary>Propose a research method</summary>
+    <form method="post" action="/actions/agenda-propose">{{ token() }}
+      <input type="hidden" name="key" value="{{ request_key }}">
+      <label>Supporting research report <select name="report_id" required>{% for r in agenda.reports %}
+        <option value="{{ r.id }}">{{ r.title }} · {{ r.created_at }}</option>{% endfor %}</select></label>
+      <label>Hypothesis to test <textarea required maxlength="1000" name="hypothesis" rows="2"></textarea></label>
+      <label>Observation that would test it <textarea required maxlength="1000" name="next_observation" rows="2"></textarea></label>
+      <button>Save proposal</button>
+    </form></details>{% endif %}
+  {% for p in agenda.proposals %}<article id="{{ p.proposal_id }}">
+    <small>{{ p.ticker }} · {{ p.status }} · edition {{ p.edition }}</small>
+    <h3>{{ p.hypothesis }}</h3><p><strong>Test</strong> {{ p.next_observation }}</p>
+    <p><a href="{{ p.href }}">{{ p.title }}</a></p>
+    <details><summary>Decision history</summary>
+      {% for decision in p.history %}<p>{{ decision.created_at }} · {{ decision.author }} · {{ decision.status }}<br>{{ decision.reason }}</p>{% endfor %}
+    </details>
+    {% if p.status in ['proposed','adopted'] %}
+      <form method="post" action="/actions/agenda-decide">{{ token() }}
+        <input type="hidden" name="key" value="{{ request_key }}_{{ p.id }}">
+        <input type="hidden" name="revision" value="{{ p.id }}">
+        <label>Reason for decision <textarea name="reason" maxlength="1000" required rows="2"></textarea></label>
+        {% if p.status=='proposed' %}<button name="decision" value="adopted">Adopt for this listing’s research agenda</button>
+        <button name="decision" value="declined">Decline</button>
+        {% else %}<button name="decision" value="retired">Retire adopted method</button>{% endif %}
+      </form>
+    {% endif %}
+  </article>{% else %}<p>No method proposals in the current scope.</p>{% endfor %}
+</section>

@@ -1,0 +1,10 @@
+{
+  "title": "Synthetic NVIDIA quarterly revenue exercise",
+  "published_at": "2024-08-28T20:30:00Z",
+  "fixture": true,
+  "periods": [
+    {"label": "Q2 FY25", "start": "2024-04-29", "end": "2024-07-28", "revenue": "120", "text": "In this synthetic release, Q2 FY25 GAAP revenue was USD 120 million."},
+    {"label": "Q1 FY25", "start": "2024-01-29", "end": "2024-04-28", "revenue": "100", "text": "In this synthetic release, Q1 FY25 GAAP revenue was USD 100 million."}
+  ],
+  "qualification": "In this exercise, a shipment moving between quarters contributed to growth. Management did not quantify the amount or update its full-year demand outlook."
+}

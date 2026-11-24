@@ -1,0 +1,70 @@
+{% macro instrument() %}<input type="hidden" name="instrument_id" value="{{ methods.listing.id }}">{{ token() }}{% endmacro %}
+{% macro financial(p) %}{{ p.financial.metric | replace('_',' ') }} · {{ p.financial.period_label }} · {{ p.financial.value }} {{ p.financial.unit }} · {{ p.financial.basis }}{% endmacro %}
+{% macro select_fact() %}<label>Source observation <select name="passage_id" required>{% for p in methods.financials %}<option value="{{ p.id }}">{{ financial(p) }} · {{ p.financial.role }}</option>{% endfor %}</select></label>{% endmacro %}
+{% macro select_event() %}<label>Event edition <select required name="event_version_id">{% for e in methods.events %}<option value="{{ e.id }}">{{ e.kind | replace('_',' ') }} · {{ e.state }} · {{ e.occurred_at or e.scheduled_start or 'date unknown' }} · {{ e.excerpt | truncate(80) }}</option>{% endfor %}</select></label>{% endmacro %}
+<h1>Research methods</h1>
+{% if not methods.listing %}<p><a href="/universe">Add a watchlist listing</a> to use the research methods.</p>{% else %}
+<form method="get" action="/methods"><label>Research listing <select name="instrument_id">{% for i in methods.listings %}<option value="{{ i.id }}"{% if i.id==methods.listing.id %} selected{% endif %}>{{ listing(i) }}</option>{% endfor %}</select></label><button>Open listing</button></form>
+<section><h2>{{ methods.listing.ticker }} research</h2>
+  <form method="post" action="/actions/method-dossier">{{ instrument() }}<button>Build company dossier and agenda</button></form>
+  {% if methods.events %}
+    <details><summary>Prepare for or review an event</summary><form method="post" action="/actions/method-event">{{ instrument() }}{{ select_event() }}
+      <label>Research focus <select name="focus"><option value="">Use the event method</option>{% for f in methods.foci %}<option>{{ f }}</option>{% endfor %}</select></label>
+      <button>Investigate event edition</button></form></details>
+    {% if methods.financials %}<details><summary>Freeze a financial expectation</summary>
+      <form action="/actions/method-freeze" method="post">{{ instrument() }}{{ select_event() }}{{ select_fact() }}
+        <p>Choose a sourced estimate, or enter your own scenario using a reported observation for units and basis.</p>
+        <label>Scenario amount <input name="value" maxlength="36" inputmode="decimal"></label>
+        <label>Scenario period start <input name="start" type="date"></label><label>Scenario period end <input name="end" type="date"></label>
+        <button>Save dated expectation</button></form></details>{% endif %}
+  {% else %}<p>Event methods become available after a sourced event is recorded for this listing.</p>{% endif %}
+  {% if methods.financials %}<details><summary>Model valuation sensitivity</summary>
+    <form action="/actions/method-valuation" method="post">{{ instrument() }}{{ select_fact() }}
+      <p>Use a reported revenue or earnings-per-share figure. A quarter is annualized at four times its reported value.</p>
+      <label>Low multiple <input name="low" inputmode="decimal" required></label><label>High multiple <input name="high" inputmode="decimal" required></label>
+      <label>Assumed growth over the annualized base (%) <input name="growth" inputmode="decimal" value="0" required></label>
+      <button>Calculate sensitivity</button></form></details>{% endif %}
+  <details><summary>Import market-only closing prices</summary>
+    <form method="post" action="/actions/method-price-import">{{ instrument() }}
+      <p>Use a series you may retain for personal research. Select one listing per file. Prices come from the supplied file and carry its hash.</p>
+      <label>Market data publisher <input name="publisher" required maxlength="80"></label><label>Series name <input name="series" required maxlength="80"></label>
+      <p>Use <code>unadjusted</code>, <code>split_adjusted</code> or <code>total_return_adjusted</code>. Adjusted quotes need a vintage with UTC offset. Leave the vintage empty for unadjusted quotes.</p>
+      <label>Market CSV with offset timestamps and stated delay in seconds <textarea rows="4" name="rows" maxlength="40000" required>{{ methods.price_fields }}
+</textarea></label><button>Save sourced closing prices</button>
+    </form></details>
+  <details id="prices"><summary>Measure a market-session price window</summary><form method="post" action="/actions/method-price">{{ instrument() }}
+    <label>Starting session <input type="date" name="start" required></label><label>Ending session <input type="date" name="end" required></label>
+    <label>Benchmark <select name="benchmark_id"><option value="">Absolute move only</option>{% for i in methods.listings if i.id!=methods.listing.id %}<option value="{{ i.id }}">{{ listing(i) }}</option>{% endfor %}</select></label>
+    <button>Check close-to-close evidence</button></form></details>
+  {% if methods.peer_financials and methods.financials %}<details><summary>Compare a peer on matching periods and units</summary>
+    <form action="/actions/method-peer" method="post">{{ instrument() }}{{ select_fact() }}<label>Peer observation <select name="peer_ref">{% for peer in methods.peer_financials %}<option value="{{ peer.passage.instrument_id }}/{{ peer.passage.id }}">{{ peer.label }} · {{ financial(peer.passage) }}</option>{% endfor %}</select></label>
+      <button>Compare financials</button></form></details>{% endif %}
+</section>
+<section id="cohort"><h2>Historical cohorts</h2>
+  <details><summary>Declare comparison before evaluating outcomes</summary>
+    <form action="/actions/method-cohort-declare" method="post">{{ instrument() }}
+      <p>The cohort includes every listing on the watchlist at enrollment. Select one reported period, a later decision time and an outcome period that starts after the decision.</p>
+      <label>Measure <select name="metric">{% for metric in methods.metrics %}<option value="{{ metric }}">{{ metric | replace('_',' ') }}</option>{% endfor %}</select></label>
+      <label>Baseline fiscal period end <input type="date" name="baseline_end" required></label><label>Decision time with UTC offset <input name="decision_at" placeholder="2025-05-01T12:00:00Z" required></label>
+      <label>Outcome fiscal period end <input type="date" name="outcome_end" required></label><button>Freeze cohort and selection</button>
+    </form></details>
+  {% for c in methods.cohorts %}<form action="/actions/method-cohort-run" method="post">{{ instrument() }}<input type="hidden" name="cohort_id" value="{{ c.id }}">
+    <p>{{ c.rule.metric | replace('_',' ') }} · {{ c.rule.baseline_end }} to {{ c.rule.outcome_end }} · declared {{ c.frozen_at }}</p><button>Evaluate frozen cohort</button></form>{% endfor %}
+</section>
+<section><h2>Saved reports</h2>{% for r in methods.reports %}<article id="{{ r.id }}">
+  <h3>{{ r.title }}</h3><p>{{ r.summary }}</p><small>{{ r.method }} · {{ r.status }} · {{ r.created_at }}{% if r.prior_id %} · <a href="/methods/reports/{{ r.prior_id }}.json">Prior report</a>{% endif %}</small>
+  {% if r.body.objective %}<p>{{ r.body.objective }}</p>{% endif %}
+  <ul>{% for c in r.body.claims %}<li>{{ c.text }} {% for ref in c.passage_ids %}<a href="#{{ r.id }}-{{ ref }}">Source {{ loop.index }}</a> {% endfor %}</li>{% endfor %}</ul>
+  {% for d in r.body.disclosure_coverage if d.unreviewed %}<p>Reviewed {{ d.reviewed }} retained passages available by {{ d.as_of }}. {{ d.unreviewed }} remain unreviewed in the <a href="#{{ r.id }}-{{ d.source_ref }}">cited disclosure</a>.</p>{% endfor %}
+  {% if r.body.agenda %}<h4>Ranked open questions</h4><ol>{% for q in r.body.agenda %}<li><strong>{{ q.question }}</strong> {{ q.reason }} {{ q.next }}</li>{% endfor %}</ol>{% endif %}
+  {% for calc in r.body.calculations %}{% if calc.kind=='multiple_sensitivity' %}<table><caption>Conditional {{ calc.output }} in {{ calc.unit }}</caption><thead><tr><th>Assumed multiple</th><th>Calculated value</th></tr></thead><tbody>{% for row in calc.scenarios %}<tr><td>{{ row.multiple }}×</td><td>{{ row.conditional_value }}</td></tr>{% endfor %}</tbody></table>{% else %}<p>{{ calc.kind | replace('_',' ') }} · {{ calc.difference }} {{ calc.unit }}{% if calc.percent_change is not none %} · {{ calc.percent_change }}%{% endif %}</p>{% endif %}{% endfor %}
+  {% if r.body.cohort %}<details><summary>Selection, outcomes and exclusions</summary><p>{{ r.body.cohort.rule.selection }} {{ r.body.cohort.rule.benchmark }}</p>
+    {% for group,v in r.body.cohort.groups.items() %}<p>{{ group }} · n={{ v.n }} · median {{ v.median_percent }}% · range {{ v.minimum_percent }}% to {{ v.maximum_percent }}% · {{ v.negative }} negative</p>{% endfor %}
+    <ul>{% for m in r.body.cohort.members %}<li>{{ m.ticker }} · {{ m.status }} · {{ m.exclusion or m.reason or m.difference }}</li>{% endfor %}</ul></details>{% endif %}
+  {% for label,entries in [('Evidence gaps',r.body.gaps),('Alternative explanations',r.body.alternatives),('Next observations',r.body.next_observations)] %}{% if entries %}<h4>{{ label }}</h4><ul>{% for text in entries %}<li>{{ text }}</li>{% endfor %}</ul>{% endif %}{% endfor %}
+  {% for c in r.body.citations %}<details id="{{ r.id }}-{{ c.id }}"><summary>{{ c.title }} · {{ c.locator | truncate(90) }}</summary><blockquote>{{ c.text }}</blockquote>
+    <p>Captured {{ c.received_at }} · available {{ c.available_at }} · {{ c.origin }}</p><code>{{ c.version_hash }}</code>
+    {% if c.url.startswith('https://') %}<p><a rel="noreferrer" href="{{ c.url }}">Original source</a></p>{% endif %}</details>{% endfor %}
+  <p><a href="/methods/reports/{{ r.id }}.json">Export report, inputs and calculations</a></p>
+</article>{% else %}<p>No saved method reports for this listing.</p>{% endfor %}</section>
+{% endif %}

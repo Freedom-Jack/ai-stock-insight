@@ -1,0 +1,87 @@
+"""Exercise launcher profile isolation, verified restore and pre-upgrade recovery."""
+
+import os
+import sqlite3
+import tempfile
+import unittest
+from contextlib import closing, redirect_stderr, redirect_stdout
+from io import StringIO
+from pathlib import Path
+from unittest.mock import patch
+
+from stockinsight import db, launcher, universe
+
+
+class LauncherWorkspaceTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows per-user encryption")
+    def test_encrypted_session_is_reused_only_by_its_listening_process(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            file = folder / "desk-session.dpapi"
+            with launcher.background_session(folder, 8765, "test-only-passphrase"):
+                self.assertNotIn(b"test-only-passphrase", file.read_bytes())
+                listener = f"TCP  127.0.0.1:8765  0.0.0.0:0  LISTENING  {os.getpid()}\r\n".encode()
+                with patch.object(launcher.subprocess, "check_output", return_value=listener):
+                    self.assertEqual(launcher.existing_session(folder, 8765)["password"], "test-only-passphrase")
+                    self.assertIsNone(launcher.existing_session(folder, 8766))
+                with patch.object(launcher.subprocess, "check_output", return_value=b""):
+                    self.assertIsNone(launcher.existing_session(folder, 8765))
+            self.assertFalse(file.exists())
+
+    def test_version_two_upgrade_saves_restorable_original_and_never_overwrites_another_profile(
+        self,
+    ):
+        with (
+            tempfile.TemporaryDirectory() as scratch,
+            redirect_stdout(StringIO()),
+            redirect_stderr(StringIO()),
+        ):
+            root = Path(scratch) / "profiles"
+            path = root / "personal/research.sqlite3"
+            with (
+                patch.object(db, "migrations", return_value=db.migrations()[:2]),
+                closing(db.connect(path)) as old,
+            ):
+                universe.import_snapshot(old, b"MSFT", complete=True)
+
+            def start(args):
+                self.assertIn("serve", args)
+                with closing(db.connect(path, fixture=False)) as conn:
+                    self.assertEqual(
+                        conn.execute("SELECT max(version) FROM migrations").fetchone()[
+                            0
+                        ],
+                        len(db.migrations()),
+                    )
+                return 0
+
+            with patch.object(launcher.cli, "main", side_effect=start):
+                self.assertEqual(launcher.main(["--root", str(root), "--no-browser"]), 0)
+            (backup,) = (root / "backups").iterdir()
+            with closing(sqlite3.connect(backup / "research.sqlite3")) as original:
+                self.assertEqual(
+                    original.execute("SELECT max(version) FROM migrations").fetchone()[
+                        0
+                    ],
+                    2,
+                )
+            self.assertEqual(
+                launcher.main(
+                    ["--demo", "--root", str(root), "--restore", str(backup)]
+                ),
+                1,
+            )
+            self.assertFalse((root / "demo").exists())
+            self.assertEqual(
+                launcher.main(["--root", str(root), "--restore", str(backup)]), 1
+            )
+            new_root = Path(scratch) / "recovered"
+            self.assertEqual(
+                launcher.main(["--root", str(new_root), "--restore", str(backup)]), 0
+            )
+            with closing(
+                db.connect(new_root / "personal/research.sqlite3")
+            ) as restored:
+                self.assertEqual(
+                    universe.universe(restored)["instruments"][0]["ticker"], "MSFT"
+                )

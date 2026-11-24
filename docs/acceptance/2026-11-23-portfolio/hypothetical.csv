@@ -1,0 +1,4 @@
+ticker,value,kind,name
+SPY,50,etf,SPDR S&P 500 ETF Trust
+XLK,30,etf,Technology Select Sector SPDR Fund
+AAPL,20,stock,Apple Inc

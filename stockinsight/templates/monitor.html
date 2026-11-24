@@ -1,0 +1,135 @@
+<h1>Watchlist monitoring</h1>
+<p>Source checks run while this desk is open. Times are UTC. Dates reported by an issuer retain their original precision.</p>
+{% if monitor.supplier %}{% set s = monitor.supplier %}
+<section id="supplier">
+  <h2>TSMC supplier watch</h2>
+  <p>USGS every 5 minutes and TWSE disclosures hourly when enabled. Earthquake screens use magnitude {{ s.magnitude }} and {{ s.radius }} km from the documented reference site.</p>
+  {% if s.tickers %}<p>{{ s.tickers | join(', ') }} · {{ s.coverage }}</p>
+  {% else %}<p>Add a qualified AMD or NVDA listing to <a href="/universe">Companies &amp; themes</a> to start checks.</p>{% endif %}
+  <form method="post" action="/actions/monitor-supplier">{{ token() }}
+    <input type="hidden" name="enabled" value="{{ '0' if s.enabled else '1' }}">
+    <button>{{ 'Disable' if s.enabled else 'Enable' }} supplier checks</button>
+  </form>
+  {% for source in s.sources %}<p><strong>{{ source.name }}</strong> · Last successful check {{ source.last_ok or 'pending' }}
+    {% if s.enabled and s.tickers %} · Due {{ source.due_at }}{% endif %}{% if source.error %}<br>{{ source.error }}{% endif %}</p>{% endfor %}
+  {% for gap in s.gaps %}<p>{{ gap }}</p>{% endfor %}
+  {% if s.review %}<h3>TSMC disclosures to review</h3>{% endif %}
+  {% for item in s.review %}<article>
+    <a href="{{ item.url }}" rel="noreferrer">{{ item.title }}</a>
+    <p class="meta">Published {{ item.revision }} · {{ item.incident }}</p>
+    <blockquote>{{ item.excerpt }}</blockquote>
+    <details><summary>Record an operational assessment</summary>
+      <form method="post" action="/actions/monitor-supplier-review">{{ token() }}
+        <input type="hidden" name="entry" value="{{ item.sequence }}">
+        <label>Status <select name="status"><option value="monitoring">Keep monitoring</option><option value="narrowed">Narrow watch</option><option value="closed">Close watch</option></select></label>
+        <label>Reviewed passage or locator <input name="locator" required maxlength="500"></label>
+        <label>Remaining uncertainty <input name="uncertainty" required maxlength="350"></label>
+        <label>Next check <input name="next_check" required maxlength="350"></label>
+        <button>Save assessment</button>
+      </form>
+    </details>
+  </article>{% endfor %}
+  {% if s.unlinked %}<details><summary>Unmatched TSMC disclosures</summary>
+    {% for item in s.unlinked %}<p><a href="{{ item.url }}" rel="noreferrer">{{ item.title }}</a> · {{ item.reason }}</p>{% endfor %}
+  </details>{% endif %}
+</section>
+{% endif %}
+<section>
+  <h2>Upcoming events and plans</h2>
+  {% for e in monitor.upcoming %}
+    <article>
+      <strong>{{ e.day or 'Date unknown' }}{% if e.scheduled_end and e.scheduled_end != e.day %} through {{ e.scheduled_end }}{% endif %} · {{ e.title | replace('_',' ') }}</strong>
+      <p><a href="/companies/{{ e.instrument_id }}">{{ e.ticker or e.raw_label }}</a> · {{ e.relevance }}</p>
+      <small>{{ e.provenance }}{% if e.state %} · {{ e.state }} · {{ e.precision }} precision{% if e.source_timezone %} · publisher timezone {{ e.source_timezone }}{% endif %}{% endif %}</small>
+    </article>
+  {% else %}<p>No upcoming observations or plans for the active watchlist.</p>{% endfor %}
+  {% if universe.instruments %}
+    <details><summary>Add a dated event to your plan</summary>
+      <form method="post" action="/actions/monitor-event">{{ token() }}
+        <label>Listing <select name="instrument_id">{% for i in universe.instruments %}<option value="{{ i.id }}">{{ listing(i) }}</option>{% endfor %}</select></label>
+        <label>Event or preparation task <input name="title" maxlength="100" required></label>
+        <label>Planned day <input type="date" name="day" required></label>
+        <label>Why it matters for this listing <textarea name="relevance" rows="2" maxlength="350" required></textarea></label>
+        <button>Add to plan</button>
+      </form>
+    </details>
+  {% endif %}
+</section>
+<section>
+  <h2>Source checks</h2>
+  {% if fixture %}<p>This workspace checks saved synthetic passages.</p>
+  {% else %}<p>Company and policy calendars show the publisher’s date precision. The UK regulator search checks the 20 newest matching releases and retains directly named issuer headlines. The source menu shows eligible listings.
+    {% if not monitor.sec_ready %}SEC filings and reported revenue need an identified contact in the desk environment.{% endif %}</p>{% endif %}
+  {% for s in monitor.schedules %}
+    <article><strong>{{ s.ticker or s.raw_label }} · {{ s.provider | upper }}</strong>
+      <span>{{ 'Enabled' if s.enabled else 'Disabled' }} · every {{ s.interval_minutes }} minutes{% if not s.active_listing %} · outside active membership{% endif %}</span>
+      {% if s.enabled %}<form method="post" action="/actions/monitor-configure">{{ token() }}
+        <input type="hidden" name="instrument_id" value="{{ s.instrument_id }}"><input type="hidden" name="provider" value="{{ s.provider }}">
+        <input type="hidden" name="interval_minutes" value="{{ s.interval_minutes }}"><input type="hidden" name="enabled" value="0">
+        <button>Disable {{ s.ticker or s.raw_label }} {{ s.provider | upper }} checks</button>
+      </form>{% endif %}
+    </article>
+  {% else %}<p>Source checks are off until you enable a schedule.</p>{% endfor %}
+  {% if universe.instruments %}
+    <details><summary>Set a check schedule</summary>
+      {% for route in monitor.routes %}
+      {% if route['items'] %}
+      <form method="post" action="/actions/monitor-configure">{{ token() }}
+        <fieldset><legend>{{ route.label }}</legend>
+        <input type="hidden" name="provider" value="{{ route.id }}">
+        <label>Listing <select name="instrument_id">{% for i in route['items'] %}<option value="{{ i.id }}">{{ listing(i) }}</option>{% endfor %}</select></label>
+        <label>Interval <select name="interval_minutes">
+          {% for duration in monitor.intervals %}<option value="{{ duration }}"{% if duration==1440 %} selected{% endif %}>{{ duration // 60 }} hours</option>{% endfor %}
+        </select></label>
+        <input type="hidden" name="enabled" value="1"><button>Save and enable checks</button>
+        </fieldset>
+      </form>
+      {% else %}<p>No resolved watchlist listing is eligible for {{ route.label }}.</p>{% endif %}
+      {% endfor %}
+    </details>
+  {% endif %}
+  {% if monitor.next_checks %}<h3>Next expected checks</h3><ul>{% for c in monitor.next_checks %}
+    <li>{{ c.scheduled_at }} · {{ c.ticker or c.raw_label }} · {{ c.provider | upper }}</li>
+  {% endfor %}</ul>{% endif %}
+  <h3>Execution history</h3>
+  {% for o in monitor.history %}
+    <article><strong>{{ o.ticker or o.raw_label }} · {{ o.provider | upper }} · {{ o.status }}</strong>
+      <p>{{ o.kind | replace('_',' ') | capitalize }} {{ o.scheduled_at }}{% if o.slot_count > 1 %} through {{ o.last_slot }} ({{ o.slot_count }} expected checks){% endif %}.
+        {% if o.started_at %}Started {{ o.started_at }}.{% endif %} {% if o.finished_at %}Finished {{ o.finished_at }}.{% endif %} {{ o.detail or '' }}</p>
+      {% if o.source_status %}<small>Source result {{ o.source_status }}{% if o.cached %} · cached{% endif %}{% if o.source_checked_at %} · checked {{ o.source_checked_at }}{% endif %}{% if o.retry_at %} · retry after {{ o.retry_at }}{% endif %}</small>{% endif %}
+      {% if o.document_title %}<p><a href="/companies/{{ o.instrument_id }}">{{ o.document_title }}</a></p>{% endif %}
+    </article>
+  {% else %}<p>No source checks have run.</p>{% endfor %}
+</section>
+{% if monitor.reports %}<section><h2>Compared source reports</h2>
+  {% for report in monitor.reports %}<article><strong>{{ report.ticker }} · {{ report.title }}</strong>
+    <p>{{ report.reports|length }} publications · {{ report.origin_count }} original source group{% if report.origin_count!=1 %}s{% endif %}.
+      {% if report.disagreement %}Published accounts disagree. Check the publisher's current calendar before preparing.{% else %}Published observations agree.{% endif %}</p>
+    {% for item in report.reports %}<p><a href="{{ item.source_url }}" rel="noreferrer">{{ item.publication }}</a> · {{ item.origin_group }} · {{ item.display_state }} · {{ item.display_date }}</p>{% endfor %}
+  </article>{% endfor %}</section>{% endif %}
+{% if monitor.publications|length>1 %}<section><h2>Source comparison</h2>
+  <details><summary>Compare two saved reports</summary>
+    <form method="post" action="/actions/monitor-relate">{{ token() }}
+      {% for key,title in [('left','First passage'),('right','Second passage')] %}<label>{{ title }} <select name="{{ key }}">{% for p in monitor.publications %}
+        <option value="{{ p.id }}">{{ p.ticker }} · {{ p.title }} · {{ p.text|truncate(85) }}</option>{% endfor %}</select></label>{% endfor %}
+      <label>Your reading <select name="judgment"><option value="same_account">Report the same development</option><option value="disagree">Disagree about the development</option><option value="different_subjects">Unrelated developments</option></select></label>
+      <label>Relevance and reason <input name="reason" maxlength="500" required></label><button>Save comparison</button></form>
+  </details>
+  {% for c in monitor.comparisons %}<article><strong>{{ c.sources[0].ticker }} · {{ {'same_account':'Same development','disagree':'Disagreement','different_subjects':'Unrelated developments'}[c.judgment] }}</strong>
+    <p>Your reading · {{ c.observed_at }} · {{ c.reason }}</p><p>Original reporting groups · {{ c.origins | join(', ') }}{% if c.unknown_origin %} · attribution unknown{% endif %}</p>
+    {% for s in c.sources %}<details><summary>{{ s.title }}</summary><blockquote>{{ s.text }}</blockquote><small>Source version {{ s.version_hash }} · captured {{ s.received_at }}</small></details>{% endfor %}</article>{% endfor %}
+</section>{% endif %}
+<section>
+  <h2>Watchlist event observations</h2>
+  {% for e in monitor.events %}
+    <article><strong><a href="/events/{{ e.version_id }}">{{ e.title | replace('_',' ') }}</a> · {{ 'published' if e.kind=='issuer_announcement' else ('watch withdrawn' if e.kind=='supplier_earthquake_watch' and e.state=='cancelled' else e.state) }}</strong>
+      <p><a href="/companies/{{ e.instrument_id }}">{{ e.ticker or e.raw_label }}</a> · {{ e.occurred_at or e.scheduled_start or 'Time unknown' }} · {{ e.precision }} precision</p>
+      <details><summary>{{ e.provenance }}</summary><blockquote>{{ e.excerpt }}</blockquote><small>Captured {{ e.received_at }} · {{ e.source_ref }}<br>Source version <code>{{ e.version_hash }}</code></small>
+        {% if e.source_url and e.source_url.startswith('https://') %}<p><a href="{{ e.source_url }}" rel="noreferrer">Original source</a></p>{% endif %}
+      </details>
+    </article>
+  {% else %}<p>No sourced event observations for the active watchlist.</p>{% endfor %}
+  {% if monitor.past_plans %}<details><summary>Past planned dates</summary><ul>{% for p in monitor.past_plans %}
+    <li>{{ p.day }} · {{ p.ticker or p.raw_label }} · {{ p.title }} · operator plan</li>
+  {% endfor %}</ul></details>{% endif %}
+</section>

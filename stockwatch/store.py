@@ -12,21 +12,20 @@ from .relevance import Watchlist, _distance_km
 
 RULE = "foundry-quake/1"
 WINDOW = timedelta(hours=24)
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
+_SCHEMA = """
 CREATE TABLE IF NOT EXISTS observations (
     id TEXT, revision TEXT, occurred_at TEXT NOT NULL, seen_at TEXT NOT NULL,
     source TEXT NOT NULL, url TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL,
     facts TEXT NOT NULL, fingerprint TEXT NOT NULL, rule TEXT NOT NULL,
     watchlist_hash TEXT NOT NULL, decision TEXT NOT NULL, PRIMARY KEY(id, revision)
 );
-CREATE INDEX IF NOT EXISTS receipts ON observations(seen_at);
-CREATE TABLE IF NOT EXISTS inbox (
+CREATE INDEX IF NOT EXISTS {receipt_index} ON observations(seen_at);
+CREATE TABLE IF NOT EXISTS {entries} (
     sequence INTEGER PRIMARY KEY, incident TEXT NOT NULL, status TEXT NOT NULL,
     id TEXT NOT NULL, revision TEXT NOT NULL, links TEXT NOT NULL,
     UNIQUE(id, revision), FOREIGN KEY(id, revision) REFERENCES observations(id, revision)
 );
-CREATE INDEX IF NOT EXISTS incident_entries ON inbox(incident, sequence);
+CREATE INDEX IF NOT EXISTS incident_entries ON {entries}(incident, sequence);
 CREATE TABLE IF NOT EXISTS feed_health (
     source TEXT PRIMARY KEY, attempt TEXT NOT NULL, last_ok TEXT,
     generated TEXT, error TEXT
@@ -46,6 +45,12 @@ CREATE TABLE IF NOT EXISTS source_gaps (
     source TEXT PRIMARY KEY, noticed TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL
 );
 """
+SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);"
+    + _SCHEMA.format(entries="inbox", receipt_index="receipts")
+)
+SUPPLIER_ENTRIES = "supplier_watch_entries"
+SUPPLIER_SCHEMA = _SCHEMA.format(entries=SUPPLIER_ENTRIES, receipt_index="supplier_observation_receipts")
 
 
 def connect(path: Path, mode: str) -> sqlite3.Connection:
@@ -80,10 +85,19 @@ def _identities(links: list[dict]) -> set[tuple]:
     return {(link["ticker"], link["supplier"], link["site"]) for link in links}
 
 
-ENTRY = """
+_ENTRY = """
 SELECT i.incident, i.sequence, i.status, i.links, o.*
-FROM inbox AS i JOIN observations AS o USING(id, revision)
+FROM {entries} AS i JOIN observations AS o USING(id, revision)
 """
+ENTRY = _ENTRY.format(entries="inbox")
+
+
+def entry_table(embedded):
+    return SUPPLIER_ENTRIES if embedded else "inbox"
+
+
+def entry_query(embedded):
+    return _ENTRY.format(entries=entry_table(embedded))
 
 
 def _operator_decision(obs, prev):
@@ -103,7 +117,7 @@ def _operator_decision(obs, prev):
     return "operator statement", (incident, obs.facts["status"], links)
 
 
-def _quake_decision(db, obs, watchlist, prev):
+def _quake_decision(db, obs, watchlist, prev, *, embedded=False):
     incident = obs.id
     if obs.kind not in ("earthquake", "withdrawn"):
         raise ValueError(f"unsupported observation kind {obs.kind}")
@@ -118,7 +132,7 @@ def _quake_decision(db, obs, watchlist, prev):
         if prev:
             # A later settings change or evidence expiry cannot retract an
             # earlier observation. Re-screen revisions against the frozen sites.
-            original = db.execute(ENTRY + " WHERE incident=? ORDER BY sequence LIMIT 1", (incident,)).fetchone()
+            original = db.execute(entry_query(embedded) + " WHERE incident=? ORDER BY sequence LIMIT 1", (incident,)).fetchone()
             prior_links = json.loads(original["links"])
             if any("screen_latitude" not in link for link in prior_links):
                 if original["watchlist_hash"] != watchlist.fingerprint:
@@ -218,51 +232,57 @@ def failed_poll(db, when: str, error: str, *, source: str = "USGS") -> None:
 def ingest(db, observations: list[Observation], watchlist: Watchlist | None = None,
            *, poll: tuple[str, str] | None = None) -> tuple[int, int]:
     """Counts new observations and inbox entries. Repeating a batch is a no-op."""
-    added = entries = 0
     with db:
         if not db.in_transaction:
             db.execute("BEGIN IMMEDIATE")
-        latest_receipt = last_evidence_receipt(db)
-        for obs in sorted(observations, key=lambda o: (o.seen_at, o.kind != "earthquake", o.revision, o.id)):
-            fingerprint = _fingerprint(obs)
-            old = db.execute("SELECT fingerprint FROM observations WHERE id=? AND revision=?",
-                             (obs.id, obs.revision)).fetchone()
-            if old:
-                if old["fingerprint"] != fingerprint:
-                    raise ValueError(f"conflicting contents for {obs.id} at {obs.revision}")
-                continue
-            if latest_receipt and obs.seen_at < latest_receipt:
-                raise ValueError("new observation would backdate the ledger; check the receipt clock")
-            incident = obs.facts.get("incident_id", obs.id)
-            # Discovery adds a reading item while the last assessed watch state
-            # continues to govern source corrections and subsequent assessments.
-            prev = db.execute(ENTRY + " WHERE incident=? AND kind!='issuer_candidate' ORDER BY sequence DESC LIMIT 1",
-                              (incident,)).fetchone()
-            if obs.kind == "operator_update":
-                reason, update = _operator_decision(obs, prev)
-                config_hash = prev["watchlist_hash"]
-            elif obs.kind == "issuer_candidate":
-                if not prev or prev["status"] in {"closed", "withdrawn"}:
-                    raise ValueError("issuer candidate requires an open watch")
-                reason = "issuer statement for review; operational assessment unchanged"
-                update = (incident, prev["status"], json.loads(prev["links"]))
-                config_hash = prev["watchlist_hash"]
-            else:
-                if watchlist is None:
-                    raise ValueError("earthquake screening requires a watchlist")
-                reason, update = _quake_decision(db, obs, watchlist, prev)
-                config_hash = prev["watchlist_hash"] if prev else watchlist.fingerprint
-            db.execute("INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                       (obs.id, obs.revision, obs.occurred_at, obs.seen_at, obs.source, obs.url,
-                        obs.title, obs.kind, _json(obs.facts), fingerprint, RULE, config_hash, reason))
-            added += 1
-            if update:
-                incident, status, links = update
-                db.execute("INSERT INTO inbox(incident,status,id,revision,links) VALUES (?,?,?,?,?)",
-                           (incident, status, obs.id, obs.revision, _json(links)))
-                entries += 1
-        if poll:
-            record_health(db, "USGS", *poll)
+        return save_observations(db, observations, watchlist, poll=poll)
+
+
+def save_observations(db, observations, watchlist=None, *, poll=None, embedded=False):
+    """Apply a complete source batch inside the caller's transaction."""
+    if not db.in_transaction:
+        raise ValueError("Supplier observations require a transaction")
+    added = entries = 0
+    latest_receipt = last_evidence_receipt(db)
+    for obs in sorted(observations, key=lambda o: (o.seen_at, o.kind != "earthquake", o.revision, o.id)):
+        fingerprint = _fingerprint(obs)
+        old = db.execute("SELECT fingerprint FROM observations WHERE id=? AND revision=?",
+                         (obs.id, obs.revision)).fetchone()
+        if old:
+            if old["fingerprint"] != fingerprint:
+                raise ValueError(f"conflicting contents for {obs.id} at {obs.revision}")
+            continue
+        if latest_receipt and obs.seen_at < latest_receipt:
+            raise ValueError("new observation would backdate the ledger; check the receipt clock")
+        incident = obs.facts.get("incident_id", obs.id)
+        # Discovery adds a reading item. Only assessed entries govern operational status.
+        prev = db.execute(entry_query(embedded) + " WHERE incident=? AND kind!='issuer_candidate' ORDER BY sequence DESC LIMIT 1",
+                          (incident,)).fetchone()
+        if obs.kind == "operator_update":
+            reason, update = _operator_decision(obs, prev)
+            config_hash = prev["watchlist_hash"]
+        elif obs.kind == "issuer_candidate":
+            if not prev or prev["status"] in {"closed", "withdrawn"}:
+                raise ValueError("issuer candidate requires an open watch")
+            reason = "issuer statement for review; operational assessment unchanged"
+            update = (incident, prev["status"], json.loads(prev["links"]))
+            config_hash = prev["watchlist_hash"]
+        else:
+            if watchlist is None:
+                raise ValueError("earthquake screening requires a watchlist")
+            reason, update = _quake_decision(db, obs, watchlist, prev, embedded=embedded)
+            config_hash = prev["watchlist_hash"] if prev else watchlist.fingerprint
+        db.execute("INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (obs.id, obs.revision, obs.occurred_at, obs.seen_at, obs.source, obs.url,
+                    obs.title, obs.kind, _json(obs.facts), fingerprint, RULE, config_hash, reason))
+        added += 1
+        if update:
+            incident, status, links = update
+            db.execute(f"INSERT INTO {entry_table(embedded)}(incident,status,id,revision,links) VALUES (?,?,?,?,?)",
+                       (incident, status, obs.id, obs.revision, _json(links)))
+            entries += 1
+    if poll:
+        record_health(db, "USGS", *poll)
     return added, entries
 
 

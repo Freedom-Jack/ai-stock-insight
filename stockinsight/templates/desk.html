@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock Insight · Research desk</title>
+  <style>
+    :root{color-scheme:light;--ink:#152c32;--muted:#435d62;--line:#cbd4cf;--paper:#f6f6f1;--teal:#006458}
+    *{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--paper);font:16px/1.55 "Segoe UI",Arial,sans-serif}
+    header,main{width:min(960px,92vw);margin:auto}header{padding:22px 0 16px;border-bottom:2px solid var(--ink);display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+    header strong{font:700 23px Georgia,serif;margin-right:auto}nav{display:flex;gap:8px 16px;flex-wrap:wrap}main{padding:26px 0 64px}
+    nav a{font-size:15px;text-decoration:none;border-bottom:2px solid transparent}nav a:hover,nav a[aria-current=page]{border-color:var(--teal)}
+    :focus-visible{outline:3px solid #357ca4;outline-offset:3px}button:hover{background:#084d45}
+    h1,h2,h3{font-family:Georgia,serif;line-height:1.18}h1{font-size:clamp(28px,5vw,44px);max-width:28em}h2{font-size:25px;margin:24px 0 12px}h3{font-size:20px}
+    a{color:var(--teal);text-underline-offset:3px}section,article{border-top:1px solid var(--line);padding:12px 0}
+    .box{background:#fff;border:1px solid var(--line);padding:18px 22px;border-radius:6px;margin:12px 0}
+    .meta,small{font-size:14px;color:var(--muted)}.flag{background:#e9eddf;padding:6px 12px;font-size:14px;font-weight:600}
+    fieldset{border:0;padding:0;margin:0}button,select,input,textarea{font:inherit}input,select,textarea{border:1px solid #839b99;background:white;color:var(--ink);padding:8px;max-width:100%;border-radius:4px}
+    textarea{width:100%;display:block}label{display:block;margin:9px 0}button{background:var(--teal);color:white;border:0;padding:8px 16px;border-radius:4px;cursor:pointer;margin:4px 0}
+    blockquote{border-left:3px solid #71988c;margin:12px 0;padding-left:14px}summary{cursor:pointer;color:var(--teal);padding:5px 0}details{margin:8px 0}
+    code,pre{overflow-wrap:anywhere;white-space:pre-wrap}li{margin:4px 0}dt{font-weight:600}dd{margin:0 0 8px}.number{font:600 25px Georgia,serif}.panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr));gap:18px}
+  </style>
+</head>
+<body>
+{% macro token() %}<input type="hidden" name="csrf" value="{{ csrf }}">{% endmacro %}
+{% macro listing(item) %}{{ item.ticker or item.raw_label }}{% if item.listing_exchange %} · {{ item.listing_exchange }}{% endif %}{% endmacro %}
+{% macro engine() %}
+  {% if not fixture %}<label>Research method <select name="engine">
+    {% if device_ready %}<option value="device">On-device model and public-source tools</option>{% endif %}
+    <option value="local">Local financial research tools</option>
+  </select></label>{% endif %}
+{% endmacro %}
+{% macro sources(p) %}
+  <blockquote>{{ p.text }}</blockquote>
+  {% if p.financial %}{% set f=p.financial %}{% if f.metric=='close_price' %}<p>{{ f.value }} {{ f.unit }} · {{ f.adjustment | replace('_',' ') }} · {{ f.exchange }} regular session<br>{{ f.session_end }} · {{ f.publisher }} · Reported delay {{ f.delay_seconds }} seconds</p>
+  {% else %}<p>{{ f.company }} · {{ f.metric }} · {{ f.value }} {{ f.unit }} · {{ f.basis }}<br>
+    {{ f.period_label }} ({{ f.period_start }} to {{ f.period_end }}) · {{ f.currency }} · {{ f.share_basis }}</p>{% endif %}{% endif %}
+  <small>{{ p.title }} · {{ p.locator }} · Published {{ p.published_at or 'unknown' }} · Captured {{ p.received_at }}</small>
+  {% if p.source_url and p.source_url.startswith('https://') %}<a href="{{ p.source_url }}" rel="noreferrer">Original source</a>{% endif %}
+  <details><summary>Source version</summary><code>{{ p.version_hash }}</code><p>{{ p.origin }} · {{ p.id }}</p>
+    {% if p.retention=='full' %}<a href="/sources/{{ p.instrument_id }}/{{ p.document_id }}">Download retained version</a>{% endif %}</details>
+{% endmacro %}
+<header><strong>Stock Insight</strong><nav aria-label="Research desk">
+{% for name,link,label in [('today','/today','Today'),('goals','/goals','Goals'),('research','/','Research'),('universe','/universe','Companies & themes'),('monitor','/monitor','Events & monitoring'),('upcoming','/upcoming','Upcoming research'),('journal','/journal','Journal'),('status','/status','Status')] %}
+<a href="{{ link }}"{% if view==name %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav></header>
+<main>
+{% if fixture %}<span class="flag">Fixture workspace · synthetic evidence</span>{% endif %}
+{% if view=='today' %}
+  <h1>Today</h1>
+  {% if not goals.plans %}<p><a href="/goals">Adopt a standing research goal</a> to receive updates for your watchlist.</p>{% endif %}
+  {% for r in goals.reports if r.state=='complete' and not r.reviewed_at %}{% if loop.index<=6 %}<p><a href="/goals/reports/{{ r.id }}">{{ r.title or r.objective }}</a> · {{ r.ended_at }}</p>{% endif %}{% endfor %}
+  {% if not universe.instruments %}<div class="box"><h2>Start your watchlist</h2><p>Add the listings you want to investigate and monitor.</p><a href="/universe">Set up companies &amp; themes</a></div>{% endif %}
+  <div class="panel"><section><h2>Research to review</h2>
+    {% for b in unread %}<p>{{ b.ticker }} · Revision {{ b.revision }}<br><a href="/cases/{{ b.case_id }}">{{ b.question }}</a></p>
+    {% else %}<p>No unread briefs. <a href="/">Ask a research question</a>.</p>{% endfor %}</section>
+    <section><h2>On the calendar</h2>{% for e in monitor.upcoming[:5] %}<p>{{ e.day or 'Date pending' }} · {{ e.ticker or e.raw_label }}<br>{{ e.title }}</p>
+    {% else %}<p>No upcoming watchlist events.</p>{% endfor %}<a href="/monitor">Open events &amp; monitoring</a></section></div>
+  <section><h2>Planned research and reviews</h2>{% for n in journal.upcoming[:8] %}<p>{{ n.ticker or n.raw_label }} · {{ n.review_on or 'Unscheduled' }}<br><a href="/journal#{{ n.id }}">{{ n.body }}</a></p>
+    {% else %}<p>No pending questions or review conditions.</p>{% endfor %}<a href="/upcoming">Open upcoming research</a></section>
+  {% if monitor.events %}<section><h2>Recent watchlist events</h2>{% for e in monitor.events[:5] %}<p><small>{{ e.ticker or e.raw_label }} · {{ (e.occurred_at or e.scheduled_start or 'Date unknown')[:10] }}</small><br><a href="/events/{{ e.version_id }}">{{ e.title | replace('_', ' ') }}</a></p>{% endfor %}</section>{% endif %}
+{% elif view=='goals' %}{% include 'goals.html' %}
+{% elif view=='agenda' %}{% include 'agenda.html' %}
+{% elif view=='event' %}<p><a href="/monitor">Events and monitoring</a></p><h1>{{ event.kind | replace('_',' ') | capitalize }}</h1>
+<p>{{ event.state }} · {{ event.occurred_at or event.scheduled_start }}{% if event.scheduled_end %} through {{ event.scheduled_end }}{% endif %} · {{ event.precision }} precision</p>
+{{ sources(source) }}{% if event.supersedes %}<p><a href="/events/{{ event.supersedes }}">Earlier event edition</a></p>{% endif %}
+{% if event.kind=='supplier_disclosure' %}<p><a href="/monitor#supplier">Review TSMC disclosures</a></p>{% endif %}
+{% elif view=='exposure' %}{% include 'exposure.html' %}
+{% elif view=='goal_report' %}{% include 'goal_report.html' %}
+{% elif view=='methods' %}{% include 'methods.html' %}
+{% elif view=='monitor' %}{% include 'monitor.html' %}
+{% elif view in ('journal','upcoming') %}{% include 'journal.html' %}
+{% elif view=='research' %}
+  <h1>Research desk</h1>
+  <p><a href="/methods">Financial and event research methods</a></p>
+  {% if universe.instruments %}
+    <form class="box" method="post" action="/actions/ask">{{ token() }}<input type="hidden" name="key" value="{{ request_key }}">
+      <label>Listing <select name="instrument_id">{% for i in universe.instruments %}<option value="{{ i.id }}">{{ listing(i) }}</option>{% endfor %}</select></label>
+      <label>Research question<textarea name="question" rows="2" maxlength="3000" required placeholder="Compare NVIDIA revenue for Q2 FY25 and Q1 FY25."></textarea></label>
+      {% if not fixture %}<small>For a dated newsroom lookup, try “Which NVIDIA press releases are in the saved feed?”</small>{% endif %}
+      {{ engine() }}
+      <details><summary>Historical reconstruction</summary><label>Public information cutoff with UTC offset <input name="cutoff" placeholder="2025-03-01T12:00:00Z"></label></details>
+      <button>Investigate</button>
+    </form>
+  {% else %}<p><a href="/universe">Import an instrument list</a> to ask your first question.</p>{% endif %}
+  <h2>Cases</h2>{% for c in cases %}<article><small>{{ c.ticker }} · {{ c.state }} · Revision {{ c.revision }}</small><h3><a href="/cases/{{ c.id }}">{{ c.question }}</a></h3></article>{% else %}<p>No saved questions yet.</p>{% endfor %}
+{% elif view=='case' %}
+  <small>{{ listing(case.instrument) }} · {{ case.jobs[0].state }}</small>
+  <h1>{{ case.question }}</h1>
+  <p><a href="/cases/{{ case.id }}/export" download>Export this case and its citations</a></p>
+  {% if case.cutoff %}<p>Public-information reconstruction through {{ case.cutoff }}</p>{% endif %}
+  {% for brief in case.briefs %}
+    <article><small>Revision {{ brief.revision }} · {{ brief.body.status }} · Analysis frozen {{ brief.as_of }}</small>
+      <h2>Assessment</h2><p>{{ brief.body.conclusion }}</p>
+      {% set changes = namespace(items=[]) %}{% for change in brief.body.changes if change not in brief.body.conclusion %}{% set changes.items = changes.items + [change] %}{% endfor %}
+      {% if changes.items %}<h3>What changed</h3><ul>{% for change in changes.items %}<li>{{ change }}</li>{% endfor %}</ul>{% endif %}
+      {% if brief.comparisons %}<h3>Financial comparison</h3>{% for n in brief.comparisons %}
+        <div class="box"><div>{{ n.metric }} · {{ n.kind | replace('_',' ') }}</div>
+          <p class="number">{{ n.baseline_value }} → {{ n.current_value }} {{ n.unit }}</p>
+          <p>{{ n.baseline_period }} to {{ n.current_period }} · Difference {{ n.difference }} {{ n.unit }}{% if n.percent_change is not none %} ({{ n.percent_change }}%){% endif %}</p>
+          {% for warn in n.warnings %}<p>{{ warn }}</p>{% endfor %}</div>
+      {% endfor %}{% endif %}
+      <h3>Evidence and interpretation</h3>{% for c in brief.body.claims %}
+        <p><small>{{ c.type | replace('_',' ') }}</small><br>{{ c.text }}</p>
+        {% for a in brief.manifest.assertions if a.kind=='issuer_announcement' and a.passage_id in c.evidence_refs %}<p><small>Published {{ a.published_at }} · <a href="{{ a.source_url }}" rel="noreferrer">Issuer announcement</a></small></p>{% endfor %}
+        {% for ref in c.evidence_refs %}{% set p=brief.sources[ref] %}<details><summary>{{ p.title }} · {{ p.locator }}</summary>{{ sources(p) }}</details>{% endfor %}
+      {% endfor %}
+      <h3>Alternative explanations</h3><ul>{% for t in brief.body.alternative_explanations %}<li>{{ t }}</li>{% endfor %}</ul>
+      {% if brief.body.gaps %}<h3>Missing evidence</h3>{% for g in case.gaps if g.id in brief.body.gaps %}
+        <p><strong>{{ g.capability | replace('_',' ') }}</strong> · {{ g.impact }} {{ g.fallback }}</p>
+        <details><summary>What would close this gap</summary><p>{{ g.remedy }} {{ g.acceptance_example }}</p></details>
+      {% endfor %}{% endif %}
+      <h3>Next checks</h3><ul>{% for t in brief.body.next_steps %}<li>{{ t }}</li>{% endfor %}</ul>
+      <details><summary>Method and tool receipts</summary><p>{{ brief.method }} · {{ brief.manifest.runtime.adapter }} · {{ brief.manifest.runtime.billing_mode }}</p>
+        {% if brief.manifest.runtime.actual_model %}<p>Model: {{ brief.manifest.runtime.actual_model }} · Research plan: {{ brief.manifest.runtime.research_plan | replace('_',' ') }}</p>{% endif %}
+        {% for r in brief.receipts %}<p>{{ r.tool }} · {{ r.status }} · {{ r.finished_at }}<br><code>{{ r.id }}</code></p>{% endfor %}
+        <small>Frozen manifest {{ brief.manifest_hash }}</small></details>
+      {% if brief.reviewed_at %}<small>Marked reviewed {{ brief.reviewed_at }}</small>{% else %}<form method="post" action="/actions/review">{{ token() }}<input type="hidden" name="brief" value="{{ brief.id }}"><button>Mark this revision reviewed</button></form>{% endif %}
+    </article>
+  {% else %}<p>No interpretation has been accepted for this case. <a href="/status">Check the investigator and sources</a>.</p>
+  {% for g in case.gaps if g.lifecycle == 'open' %}<p><strong>{{ g.capability | replace('_',' ') }}</strong> · {{ g.impact }} {{ g.remedy }}</p>{% endfor %}
+  {% endfor %}
+  <section><h2>Investigation history</h2>{% for j in case.jobs %}<p>{{ j.created_at }} · <strong>{{ j.state }}</strong> {{ j.detail }}</p>
+    {% if j.state in ('ready','leased') %}<form method="post" action="/actions/run">{{ token() }}<input type="hidden" name="job" value="{{ j.id }}">{{ engine() }}<button>Run or recover job</button></form>{% endif %}
+  {% endfor %}<form method="post" action="/actions/continue">{{ token() }}<input type="hidden" name="case" value="{{ case.id }}"><input type="hidden" name="key" value="{{ request_key }}"><input type="hidden" name="base_revision" value="{{ case.revision }}">{{ engine() }}<button>Investigate again</button></form></section>
+  {% include 'case_memory.html' %}
+  {% include 'case_notes.html' %}
+{% elif view=='universe' %}
+  <h1>Companies &amp; themes</h1>
+  <p><a href="/exposures">Review evidence for business and policy relationships</a></p>
+  {% for s in universe.sources %}<section><h2>{{ s.alias }}</h2><p>{{ s.status }} · External membership · {{ s.mode }}<br>Last accepted observation {{ s.last_success_at or 'pending' }}</p></section>{% endfor %}
+  {% for c in universe.candidates %}<div class="box"><strong>{{ c.state }}</strong> · {{ c.source_alias }} ({{ c.source_id }}) · {{ c.reason }}<p>{{ c.added }} additions, {{ c.removed }} removals</p>
+    <ul>{% for change in c.affected %}<li>{{ change.action | capitalize }} · {{ change.label }}</li>{% endfor %}</ul>
+    {% if c.confirmable %}<form method="post" action="/actions/accept">{{ token() }}<input name="snapshot" value="{{ c.id }}" type="hidden"><button>Accept replacement</button></form>{% endif %}</div>{% endfor %}
+  <div class="panel">{% for i in universe.instruments %}<article><a href="/companies/{{ i.id }}">{{ listing(i) }}</a><br>{{ i.company_name or i.resolution_status }}<br><small>{{ i.source_ids | join(', ') }}</small></article>{% endfor %}</div>
+  <h2>Import the selected list</h2>
+  <form method="post" action="/actions/import">{{ token() }}
+    <label>One ticker per line, or instrument-only CSV<textarea name="entries" rows="4" placeholder="ticker,listing_exchange,security_type,currency&#10;NVDA,NASDAQ,STK,USD"></textarea></label>
+    <label><input type="checkbox" name="complete" value="yes"> This is the complete selected list</label><button>Import snapshot</button>
+  </form>
+  <h2>Research themes</h2>{% for t in universe.themes %}<article><h3>{{ t.name }}</h3><p>{{ t.question }}</p>
+    {% for m in universe.theme_memberships if m.theme_id==t.id %}<p>{{ m.status }} · {{ m.reason }}</p>{% endfor %}
+    {% if universe.instruments %}<form method="post" action="/actions/link-theme">{{ token() }}<input type="hidden" name="theme" value="{{ t.id }}">
+      <label>Listing <select name="instrument_id">{% for i in universe.instruments %}<option value="{{ i.id }}">{{ listing(i) }}</option>{% endfor %}</select></label><label>Reason <input name="reason" required></label><button>Link to theme</button></form>{% endif %}</article>{% endfor %}
+  <details><summary>Create a research theme</summary><form method="post" action="/actions/theme">{{ token() }}<label>Name <input name="name" required></label><label>Research question <input name="question" required></label><button>Create theme</button></form></details>
+{% elif view=='company' %}
+  <small>{{ listing(instrument) }} · {{ instrument.resolution_status }}</small><h1>{{ instrument.company_name or instrument.raw_label }}</h1>
+  {% if not fixture %}<form method="post" action="/actions/capture">{{ token() }}<input type="hidden" name="instrument_id" value="{{ instrument.id }}">
+    <select aria-label="Public source" name="provider">{% for key,label in public_routes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select> <button>Capture public source</button></form>
+    {% if request.query_params.get('capture') %}<p>Capture {{ request.query_params.get('capture') }}</p>{% endif %}{% endif %}
+  <h2>Source passages</h2>{% for p in passages %}<section>{{ sources(p) }}</section>{% else %}<p>No eligible versions saved.</p>{% endfor %}
+  <h2>Questions</h2>{% for c in cases %}<p><a href="/cases/{{ c.id }}">{{ c.question }}</a></p>{% else %}<p>No saved questions.</p>{% endfor %}
+  <h2>Selected research history</h2>{% for r in imported %}<p><a href="/memory/{{ r.id }}">{{ r.title }}</a> · {{ r.kind }}</p>{% endfor %}
+  <details><summary>Import a case or selected conversation</summary><form method="post" action="/actions/memory-import">{{ token() }}<input type="hidden" name="listing" value="{{ instrument.id }}">
+  <label>Format <select name="kind"><option value="conversation">Selected conversation</option><option value="case">Portable case</option></select></label>
+  <label>Conversation title <input name="title" maxlength="180"></label><label>Research JSON <textarea name="raw" rows="5" required></textarea></label>
+  <p>For a selected conversation, paste a list of messages with role (user or assistant) and content. Earlier statements retain their authorship. Only source-backed evidence can support a new claim.</p>
+  <button>Import selected research</button></form></details>
+{% elif view=='memory' %}
+  <p><a href="/companies/{{ record.instrument_id }}">Back to company</a></p><h1>{{ record.title }}</h1><small>Imported {{ record.imported_at }} · {{ record.kind }}</small>
+  {% if record.kind=='conversation' %}{% for m in record.payload %}<article><strong>{{ m.role | capitalize }}</strong> · {{ m.timestamp or 'Original time unknown' }}<p>{{ m.content }}</p></article>{% endfor %}
+  {% else %}{% for r in record.payload.case.revisions %}<article><h2>Archived revision {{ r.revision }}</h2><p>{{ r.body.conclusion }}</p><p>{{ r.method }} · {{ r.as_of }}</p>{% for s in r.sources %}<p>{{ s.title }} · {{ s.locator }}<br>{{ s.text }}</p>{% endfor %}</article>{% endfor %}{% endif %}
+{% elif view=='status' %}
+  <h1>Workspace status</h1><h2>Investigator</h2>
+  {% if delivery.channel == 'ntfy' %}<section><h2>External notifications</h2><p>{{ delivery.channel }} · {{ 'enabled' if delivery.enabled else 'disabled' }} · {{ 'available' if delivery.available else 'unavailable' }}</p>
+  <form method="post" action="/actions/delivery-configure">{{ token() }}<input type="hidden" name="enabled" value="{{ '0' if delivery.enabled else '1' }}"><button>{{ 'Disable' if delivery.enabled else 'Enable' }} notifications</button></form>
+  <form method="post" action="/actions/delivery-test">{{ token() }}<input type="hidden" name="key" value="{{ request_key }}"><button>Send a test notice</button></form>
+  {% for n in delivery.notices %}<p>{{ n.created_at }} · {{ n.state }} · <a href="{{ n.report_path }}">{{ n.title }}</a></p>
+  {% if n.state in ('failed','uncertain') %}<form method="post" action="/actions/delivery-retry">{{ token() }}<input type="hidden" name="id" value="{{ n.id }}">{% if n.state=='uncertain' %}<label><input name="confirm" value="1" type="checkbox" required> An earlier notice may have been delivered.</label>{% endif %}<button>Retry delivery</button></form>{% endif %}{% endfor %}
+  <details><summary>Delivery attempts</summary>{% for a in delivery.attempts %}<p>{{ a.started_at }} · {{ a.outcome }} · {{ a.detail or '' }}</p>{% endfor %}</details></section>{% endif %}
+  {% if assistant_state.enabled %}<p>{{ assistant_state.label }} · ChatGPT Work research connection enabled.</p>
+  <p>Research jobs {{ assistant_state.jobs }} · Active event subscriptions {{ assistant_state.subscriptions }} · Platform event receipts {{ assistant_state.platform_events }}</p>
+  <p>Check scheduled runs and their delivery in your dot under Scheduled.</p>
+  {% elif assistant_state.prepared %}<p>ChatGPT Work connection prepared. Standing goals use local investigation until the connection and allowance are activated.</p>
+  {% elif fixture %}<p>Offline fixture driver. Model requests per run: 0.</p>{% endif %}
+  {% if not fixture and not assistant_state.enabled %}<p>Local financial research tools are connected. The on-device model is {{ 'installed' if device_ready else 'unavailable' }}. The trial sends no hosted-model requests.</p>{% endif %}
+  <p><a href="/monitor">Source monitoring</a> runs while the desk process is active. You can close the browser.</p>
+  <h2>Data access</h2>{% for p in providers %}<details><summary>{{ p.id }}</summary><pre>{{ p | tojson(indent=2) }}</pre></details>{% endfor %}
+  <h2>Jobs</h2>{% for s in states %}<p>{{ s.state }} · {{ s.n }}</p>{% else %}<p>No jobs yet.</p>{% endfor %}
+  {% if can_stop %}<details><summary>Stop this desk</summary><form method="post" action="/actions/stop">{{ token() }}<input type="hidden" name="confirm" value="yes"><p>Pending schedules resume the next time you start this workspace.</p><button>Stop Stock Insight</button></form></details>{% endif %}
+{% endif %}
+</main></body></html>
