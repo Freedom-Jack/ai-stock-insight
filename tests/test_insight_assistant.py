@@ -11,7 +11,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from stockinsight import assistant, assistant_events, assistant_mcp, db, goals, replay
+from stockinsight import assistant, assistant_events, assistant_mcp, db, goals, replay, universe
 
 
 class AssistantStage(unittest.TestCase):
@@ -42,6 +42,25 @@ class AssistantStage(unittest.TestCase):
             "Shipments could change over the next quarter.",
             "Existing contracts could dampen the effect.",
             "Check the next dated primary disclosure.",
+        )
+
+    def test_watchlist_reports_the_active_list_names_and_positions(self):
+        conn = self.start("company")
+        original = goals.listings(conn, "watchlist")[0]
+        source_id = original["source_ids"][0]
+        universe.rename_source(conn, source_id, "Long term")
+        qualified = ",".join(original[field] for field in universe.LISTING)
+        header = ",".join(universe.LISTING)
+        result = universe.import_snapshot(
+            conn, f"{header}\nQQQ,,,\n{qualified}".encode(), complete=True, source_id="research"
+        )
+        self.assertEqual(result["state"], "complete")
+        reply = assistant_mcp.rpc(conn, "tools/call", {"name": "watchlist", "arguments": {}})
+        self.assertFalse(reply["isError"])
+        listings = {item["id"]: item for item in json.loads(reply["content"][0]["text"])}
+        self.assertCountEqual(
+            listings[original["id"]]["watchlists"],
+            [{"name": "Long term", "position": 1}, {"name": "research", "position": 2}],
         )
 
     def test_financial_followup_frozen_scope_receipts_and_restart(self):

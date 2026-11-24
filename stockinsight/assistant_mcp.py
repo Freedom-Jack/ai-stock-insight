@@ -41,10 +41,21 @@ def status(db):
 
 
 def watchlist(db):
-    return [
-        {k: i[k] for k in ("id", "ticker", "listing_exchange", "currency", "resolution_status")}
-        for i in goals.listings(db, "watchlist")
-    ]
+    listings = {}
+    for row in db.execute(
+        """SELECT i.id, i.ticker, i.listing_exchange, i.currency, i.resolution_status,
+                  s.alias, m.display_order
+           FROM instruments i JOIN source_memberships m ON m.instrument_id=i.id
+           JOIN watchlist_sources s ON s.id=m.source_id
+           WHERE m.status='active' ORDER BY i.raw_label,i.id,s.id"""
+    ):
+        listing = listings.setdefault(row["id"], {
+            k: row[k] for k in ("id", "ticker", "listing_exchange", "currency", "resolution_status")
+        } | {"watchlists": []})
+        listing["watchlists"].append(
+            {"name": row["alias"], "position": row["display_order"] + 1}
+        )
+    return list(listings.values())
 
 
 def health(db):
@@ -85,7 +96,7 @@ def capture(db, job_id, worker_key, provider):
 
 
 TOOLS = {
-    "watchlist": (watchlist, (), "Read active instrument identities."),
+    "watchlist": (watchlist, (), "Read active instrument identities, watchlist names and positions."),
     "monitor_health": (health, (), "Read coverage, delivery and pending research job IDs."),
     "read_case": (assistant.case, ("case_id",), "Read accepted revisions, citations, gaps and open work."),
     "request_followup": (
