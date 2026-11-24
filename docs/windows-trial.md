@@ -9,7 +9,9 @@ Set-Location 'E:\Project\ai-stock-insight'
 .\Start-StockInsight.cmd
 ```
 
-The launcher opens **http://127.0.0.1:8765/today**. Enter username `research` and the password printed in the terminal. For unattended collection, run `.\ops\windows\Enable-StockInsightAtSignIn.ps1` once. It starts the desk immediately and creates a Startup shortcut for the current user. The green chart icon appears in the taskbar notification area, often under the **^** arrow. Click to open the desk. Right-click and select **查看登录信息** for the local credentials or **退出 Stock Insight** to stop collection and release the process. You can then double-click the launcher again to resume. Once the icon is running, close the launcher or browser at any time. A foreground-only session needs its terminal to stay open. Use **Status → Stop this desk → Stop Stock Insight** for a graceful stop. Each new listener issues a fresh password. To select another port use `--port 8770`. Add `--no-browser` to print the address without opening a tab.
+The launcher opens **http://127.0.0.1:8765/today**. For collection after each sign-in, run `.\ops\windows\Enable-StockInsightAtSignIn.ps1` once. It starts the desk and registers a windowless Startup shortcut for the current user.
+
+The green chart icon appears in the taskbar notification area, often under the **^** arrow. Click it to open the desk. Right-click and select **查看登录信息** for the username and current password, or **退出 Stock Insight** to stop collection. Double-click the launcher to resume. The tray process is independent of the setup terminal, the manual launcher and the browser. The explicit foreground CLI continues to use its terminal. **Status → Stop this desk** also stops the desk. Use `--port 8770` to select another port, or `--no-browser` to print connection details.
 
 ## First use
 

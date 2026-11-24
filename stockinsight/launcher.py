@@ -41,7 +41,8 @@ def existing_session(folder, port):
     data = json.loads(_protect(session.read_bytes(), decrypt=True))
     if data["port"] == port:
         netstat = Path(os.environ["SystemRoot"]) / "System32" / "netstat.exe"
-        rows = subprocess.check_output([str(netstat), "-ano", "-p", "TCP"], timeout=10)
+        rows = subprocess.check_output([str(netstat), "-ano", "-p", "TCP"], timeout=10,
+                                       creationflags=subprocess.CREATE_NO_WINDOW)
         endpoint = f"127.0.0.1:{port}".encode()
         owner = str(data["pid"]).encode()
         for line in rows.splitlines():
@@ -55,12 +56,14 @@ def start_tray_desk(folder, port):
     import win32event
     import win32process
 
-    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    # Match the sign-in entry: use the real GUI executable and keep this venv.
+    pythonw = Path(sys.base_prefix) / "pythonw.exe"
+    env = {**os.environ, "__PYVENV_LAUNCHER__": str(Path(sys.executable).with_name("pythonw.exe"))}
     args = [str(pythonw), "-B", "-m", "stockinsight.launcher", "--background",
             "--root", str(folder.parent), "--port", str(port)]
     process, thread, _, _ = win32process.CreateProcess(
-        str(pythonw), subprocess.list2cmdline(args), None, None, False, subprocess.CREATE_NO_WINDOW,
-        None, str(Path(__file__).resolve().parents[1]), win32process.STARTUPINFO(),
+        str(pythonw), subprocess.list2cmdline(args), None, None, False, subprocess.DETACHED_PROCESS,
+        env, str(Path(__file__).resolve().parents[1]), win32process.STARTUPINFO(),
     )
     thread.Close()
     with closing(process):
@@ -141,8 +144,6 @@ def main(argv=None):
                 print(f"Open {url}\nUsername: research\nTerminal password: {entry['password']}", flush=True)
                 if not args.no_browser:
                     webbrowser.open(url)
-                    if sys.stdin.isatty():
-                        input("Press Enter to close this launcher. ")
             return 0
         if path.is_file():
             with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as conn:

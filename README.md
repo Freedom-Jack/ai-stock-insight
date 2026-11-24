@@ -8,9 +8,9 @@ Double-click **Start-StockInsight.cmd** or run the following from this checkout.
 .\Start-StockInsight.cmd
 ```
 
-Sign in as `research` using the password shown by the launcher. The **Today** page at [127.0.0.1:8765](http://127.0.0.1:8765/today) opens your saved personal workspace. Edit your watchlist under **Companies & themes** and your research instructions under **Goals**. Reports keep their sources and follow-ups in the same case.
+Sign in as `research`. To see the current password, right-click the green Stock Insight taskbar icon and choose **查看登录信息**. The **Today** page at [127.0.0.1:8765](http://127.0.0.1:8765/today) opens your saved personal workspace. Edit your watchlist under **Companies & themes** and your research instructions under **Goals**. Reports keep their sources and follow-ups in the same case.
 
-To collect after each Windows sign-in, run the following once from this checkout. It starts the desk immediately and installs a current-user Startup shortcut. Opening the usual launcher again connects to the running desk.
+To collect after each Windows sign-in, run the following once from this checkout. It starts the desk immediately and installs a current-user Startup shortcut. At sign-in the desk opens directly in the tray. You can close the setup terminal. Opening the usual launcher again connects to the running desk.
 
 ```powershell
 .\ops\windows\Enable-StockInsightAtSignIn.ps1
