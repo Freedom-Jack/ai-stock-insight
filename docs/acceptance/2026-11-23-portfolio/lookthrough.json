@@ -1,0 +1,716 @@
+{
+  "generated": "2026-11-23",
+  "portfolio": {
+    "name": "portfolio-acceptance-state-street",
+    "currency": "USD",
+    "total_value": 100.0,
+    "positions": [
+      {
+        "ticker": "SPY",
+        "kind": "etf",
+        "value": 50.0,
+        "weight": 0.5,
+        "issuer": "ssga",
+        "fund_name": "State Street\u00ae SPDR\u00ae S&P 500\u00ae ETF Trust",
+        "holdings": 505,
+        "as_of": "2026-11-20",
+        "state": "fresh"
+      },
+      {
+        "ticker": "XLK",
+        "kind": "etf",
+        "value": 30.0,
+        "weight": 0.3,
+        "issuer": "ssga",
+        "fund_name": "State Street\u00ae Technology Select Sector SPDR\u00ae ETF",
+        "holdings": 79,
+        "as_of": "2026-11-20",
+        "state": "fresh"
+      },
+      {
+        "ticker": "AAPL",
+        "kind": "stock",
+        "value": 20.0,
+        "weight": 0.2,
+        "issuer": "direct",
+        "fund_name": null,
+        "holdings": 1,
+        "as_of": null,
+        "state": "direct"
+      }
+    ]
+  },
+  "summary": {
+    "line_items": 578,
+    "unique_names": 501,
+    "effective_names": 9.929330852150729,
+    "top10_share": 0.5540433178146479,
+    "redundant_weight": 0.6717396934320449,
+    "multi_held_names": 76,
+    "equity_weight": 0.9988377070000001,
+    "residual": 0.0004175839999999931
+  },
+  "top_holdings": [
+    {
+      "name": "Apple Inc",
+      "ticker": "AAPL",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.29678645000000003,
+      "value": 29.678645000000003,
+      "positions": {
+        "AAPL": 0.2,
+        "XLK": 0.05490036,
+        "SPY": 0.041886089999999994
+      }
+    },
+    {
+      "name": "Microsoft Corp",
+      "ticker": "MSFT",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.06965256,
+      "value": 6.965256,
+      "positions": {
+        "XLK": 0.03950928,
+        "SPY": 0.030143279999999998
+      }
+    },
+    {
+      "name": "Nvidia Corp",
+      "ticker": "NVDA",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.05881125300000001,
+      "value": 5.881125300000001,
+      "positions": {
+        "XLK": 0.033359688000000005,
+        "SPY": 0.025451565000000002
+      }
+    },
+    {
+      "name": "Broadcom Inc",
+      "ticker": "AVGO",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.028038659000000004,
+      "value": 2.8038659000000004,
+      "positions": {
+        "XLK": 0.015903879000000003,
+        "SPY": 0.012134780000000001
+      }
+    },
+    {
+      "name": "Alphabet Inc",
+      "ticker": "GOOGL",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.02355769,
+      "value": 2.355769,
+      "positions": {
+        "SPY": 0.02355769
+      }
+    },
+    {
+      "name": "AMAZON.COM Inc",
+      "ticker": "AMZN",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.02029728,
+      "value": 2.029728,
+      "positions": {
+        "SPY": 0.02029728
+      }
+    },
+    {
+      "name": "Advanced Micro Devices",
+      "ticker": "AMD",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.019576760000000002,
+      "value": 1.9576760000000002,
+      "positions": {
+        "XLK": 0.013772310000000001,
+        "SPY": 0.00580445
+      }
+    },
+    {
+      "name": "Micron Technology Inc",
+      "ticker": "MU",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.015407474,
+      "value": 1.5407474,
+      "positions": {
+        "XLK": 0.009781869,
+        "SPY": 0.0056256050000000005
+      }
+    },
+    {
+      "name": "Cisco Systems Inc",
+      "ticker": "CSCO",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.010937391999999999,
+      "value": 1.0937392,
+      "positions": {
+        "XLK": 0.007943397,
+        "SPY": 0.0029939949999999997
+      }
+    },
+    {
+      "name": "Meta Platforms Inc Class A",
+      "ticker": "META",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.010362225000000001,
+      "value": 1.0362225,
+      "positions": {
+        "SPY": 0.010362225000000001
+      }
+    },
+    {
+      "name": "Palantir Technologies Inc A",
+      "ticker": "PLTR",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.010107033,
+      "value": 1.0107032999999999,
+      "positions": {
+        "XLK": 0.007340312999999999,
+        "SPY": 0.00276672
+      }
+    },
+    {
+      "name": "Eli Lilly + Co",
+      "ticker": "LLY",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.00903116,
+      "value": 0.903116,
+      "positions": {
+        "SPY": 0.00903116
+      }
+    },
+    {
+      "name": "Berkshire Hathaway Inc Cl B",
+      "ticker": "BRK.B",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.00889443,
+      "value": 0.889443,
+      "positions": {
+        "SPY": 0.00889443
+      }
+    },
+    {
+      "name": "Palo Alto Networks Inc",
+      "ticker": "PANW",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.00856607,
+      "value": 0.856607,
+      "positions": {
+        "XLK": 0.006221415,
+        "SPY": 0.002344655
+      }
+    },
+    {
+      "name": "Tesla Inc",
+      "ticker": "TSLA",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.00816586,
+      "value": 0.816586,
+      "positions": {
+        "SPY": 0.00816586
+      }
+    },
+    {
+      "name": "Intel Corp",
+      "ticker": "INTC",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.007799828,
+      "value": 0.7799828,
+      "positions": {
+        "XLK": 0.005665578,
+        "SPY": 0.0021342500000000003
+      }
+    },
+    {
+      "name": "Texas Instruments Inc",
+      "ticker": "TXN",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.0073746060000000006,
+      "value": 0.7374606,
+      "positions": {
+        "XLK": 0.005355696,
+        "SPY": 0.00201891
+      }
+    },
+    {
+      "name": "Applied Materials Inc",
+      "ticker": "AMAT",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.007355022,
+      "value": 0.7355022,
+      "positions": {
+        "XLK": 0.005342472,
+        "SPY": 0.00201255
+      }
+    },
+    {
+      "name": "Crowdstrike Holdings Inc A",
+      "ticker": "CRWD",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.007151805,
+      "value": 0.7151805,
+      "positions": {
+        "XLK": 0.00519501,
+        "SPY": 0.001956795
+      }
+    },
+    {
+      "name": "Lam Research Corp",
+      "ticker": "LRCX",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.007019900999999999,
+      "value": 0.7019901,
+      "positions": {
+        "XLK": 0.005099075999999999,
+        "SPY": 0.001920825
+      }
+    },
+    {
+      "name": "Jpmorgan Chase + Co",
+      "ticker": "JPM",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.00691589,
+      "value": 0.691589,
+      "positions": {
+        "SPY": 0.00691589
+      }
+    },
+    {
+      "name": "Intl Business Machines Corp",
+      "ticker": "IBM",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.006473896,
+      "value": 0.6473896,
+      "positions": {
+        "XLK": 0.004701576,
+        "SPY": 0.00177232
+      }
+    },
+    {
+      "name": "Oracle Corp",
+      "ticker": "ORCL",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.006083558,
+      "value": 0.6083558,
+      "positions": {
+        "XLK": 0.004419228,
+        "SPY": 0.00166433
+      }
+    },
+    {
+      "name": "Visa Inc Class A Shares",
+      "ticker": "V",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.005737575000000001,
+      "value": 0.5737575,
+      "positions": {
+        "SPY": 0.005737575000000001
+      }
+    },
+    {
+      "name": "Exxonmobil Holdings Corp",
+      "ticker": "XOM",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.00551165,
+      "value": 0.551165,
+      "positions": {
+        "SPY": 0.00551165
+      }
+    }
+  ],
+  "multi_held": [
+    {
+      "name": "Apple Inc",
+      "ticker": "AAPL",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.29678645000000003,
+      "value": 29.678645000000003,
+      "positions": {
+        "AAPL": 0.2,
+        "XLK": 0.05490036,
+        "SPY": 0.041886089999999994
+      }
+    },
+    {
+      "name": "Microsoft Corp",
+      "ticker": "MSFT",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.06965256,
+      "value": 6.965256,
+      "positions": {
+        "XLK": 0.03950928,
+        "SPY": 0.030143279999999998
+      }
+    },
+    {
+      "name": "Nvidia Corp",
+      "ticker": "NVDA",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.05881125300000001,
+      "value": 5.881125300000001,
+      "positions": {
+        "XLK": 0.033359688000000005,
+        "SPY": 0.025451565000000002
+      }
+    },
+    {
+      "name": "Broadcom Inc",
+      "ticker": "AVGO",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.028038659000000004,
+      "value": 2.8038659000000004,
+      "positions": {
+        "XLK": 0.015903879000000003,
+        "SPY": 0.012134780000000001
+      }
+    },
+    {
+      "name": "Advanced Micro Devices",
+      "ticker": "AMD",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.019576760000000002,
+      "value": 1.9576760000000002,
+      "positions": {
+        "XLK": 0.013772310000000001,
+        "SPY": 0.00580445
+      }
+    },
+    {
+      "name": "Micron Technology Inc",
+      "ticker": "MU",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.015407474,
+      "value": 1.5407474,
+      "positions": {
+        "XLK": 0.009781869,
+        "SPY": 0.0056256050000000005
+      }
+    },
+    {
+      "name": "Cisco Systems Inc",
+      "ticker": "CSCO",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.010937391999999999,
+      "value": 1.0937392,
+      "positions": {
+        "XLK": 0.007943397,
+        "SPY": 0.0029939949999999997
+      }
+    },
+    {
+      "name": "Palantir Technologies Inc A",
+      "ticker": "PLTR",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.010107033,
+      "value": 1.0107032999999999,
+      "positions": {
+        "XLK": 0.007340312999999999,
+        "SPY": 0.00276672
+      }
+    },
+    {
+      "name": "Palo Alto Networks Inc",
+      "ticker": "PANW",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.00856607,
+      "value": 0.856607,
+      "positions": {
+        "XLK": 0.006221415,
+        "SPY": 0.002344655
+      }
+    },
+    {
+      "name": "Intel Corp",
+      "ticker": "INTC",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.007799828,
+      "value": 0.7799828,
+      "positions": {
+        "XLK": 0.005665578,
+        "SPY": 0.0021342500000000003
+      }
+    },
+    {
+      "name": "Texas Instruments Inc",
+      "ticker": "TXN",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.0073746060000000006,
+      "value": 0.7374606,
+      "positions": {
+        "XLK": 0.005355696,
+        "SPY": 0.00201891
+      }
+    },
+    {
+      "name": "Applied Materials Inc",
+      "ticker": "AMAT",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.007355022,
+      "value": 0.7355022,
+      "positions": {
+        "XLK": 0.005342472,
+        "SPY": 0.00201255
+      }
+    },
+    {
+      "name": "Crowdstrike Holdings Inc A",
+      "ticker": "CRWD",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.007151805,
+      "value": 0.7151805,
+      "positions": {
+        "XLK": 0.00519501,
+        "SPY": 0.001956795
+      }
+    },
+    {
+      "name": "Lam Research Corp",
+      "ticker": "LRCX",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.007019900999999999,
+      "value": 0.7019901,
+      "positions": {
+        "XLK": 0.005099075999999999,
+        "SPY": 0.001920825
+      }
+    },
+    {
+      "name": "Intl Business Machines Corp",
+      "ticker": "IBM",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.006473896,
+      "value": 0.6473896,
+      "positions": {
+        "XLK": 0.004701576,
+        "SPY": 0.00177232
+      }
+    },
+    {
+      "name": "Oracle Corp",
+      "ticker": "ORCL",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.006083558,
+      "value": 0.6083558,
+      "positions": {
+        "XLK": 0.004419228,
+        "SPY": 0.00166433
+      }
+    },
+    {
+      "name": "Arista Networks Inc",
+      "ticker": "ANET",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.005372180999999999,
+      "value": 0.5372180999999999,
+      "positions": {
+        "XLK": 0.0039014759999999996,
+        "SPY": 0.0014707049999999999
+      }
+    },
+    {
+      "name": "Amphenol Corp Cl A",
+      "ticker": "APH",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.005262523,
+      "value": 0.5262523,
+      "positions": {
+        "XLK": 0.003822753,
+        "SPY": 0.00143977
+      }
+    },
+    {
+      "name": "Analog Devices Inc",
+      "ticker": "ADI",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.005157367,
+      "value": 0.5157367,
+      "positions": {
+        "XLK": 0.0037463970000000003,
+        "SPY": 0.00141097
+      }
+    },
+    {
+      "name": "Kla Corp",
+      "ticker": "KLAC",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.00507502,
+      "value": 0.507502,
+      "positions": {
+        "XLK": 0.0036856500000000004,
+        "SPY": 0.00138937
+      }
+    },
+    {
+      "name": "Qualcomm Inc",
+      "ticker": "QCOM",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.004903086,
+      "value": 0.4903086,
+      "positions": {
+        "XLK": 0.003560796,
+        "SPY": 0.0013422899999999999
+      }
+    },
+    {
+      "name": "Salesforce Inc",
+      "ticker": "CRM",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.004529275,
+      "value": 0.45292750000000004,
+      "positions": {
+        "XLK": 0.00328914,
+        "SPY": 0.001240135
+      }
+    },
+    {
+      "name": "Accenture PLC Cl A",
+      "ticker": "ACN",
+      "sector": "Unclassified",
+      "country": "Unknown",
+      "weight": 0.0041430040000000005,
+      "value": 0.41430040000000007,
+      "positions": {
+        "XLK": 0.003009294,
+        "SPY": 0.00113371
+      }
+    },
+    {
+      "name": "Marvell Technology Inc",
+      "ticker": "MRVL",
+      "sector": "Unclassified",
+      "country": "United States",
+      "weight": 0.003277435,
+      "value": 0.3277435,
+      "positions": {
+        "XLK": 0.00238107,
+        "SPY": 0.000896365
+      }
+    },
+    {
+      "name": "Seagate Technology Holdings",
+      "ticker": "STX",
+      "sector": "Unclassified",
+      "country": "Unknown",
+      "weight": 0.003171231,
+      "value": 0.3171231,
+      "positions": {
+        "XLK": 0.002303061,
+        "SPY": 0.00086817
+      }
+    }
+  ],
+  "sectors": [
+    {
+      "label": "Unclassified",
+      "weight": 0.9988377070000009
+    },
+    {
+      "label": "Cash & Derivatives",
+      "weight": 0.000744709
+    }
+  ],
+  "countries": [
+    {
+      "label": "United States",
+      "weight": 0.9765237830000006
+    },
+    {
+      "label": "Unknown",
+      "weight": 0.02231392399999999
+    },
+    {
+      "label": "Cash & Derivatives",
+      "weight": 0.000744709
+    }
+  ],
+  "overlap": {
+    "funds": [
+      "SPY",
+      "XLK"
+    ],
+    "matrix": [
+      [
+        1.0,
+        0.3429820558051377
+      ],
+      [
+        0.3429820558051377,
+        1.0
+      ]
+    ],
+    "pairs": [
+      {
+        "a": "SPY",
+        "b": "XLK",
+        "weighted": 0.3429820558051377,
+        "common": 76,
+        "a_in_b": 0.15169660678642716,
+        "b_in_a": 1.0
+      }
+    ]
+  },
+  "redundancy": [
+    {
+      "position": "SPY",
+      "weight": 0.5,
+      "replicated": 0.3429820558051377,
+      "unique": 0.6570179441948624
+    },
+    {
+      "position": "XLK",
+      "weight": 0.3,
+      "replicated": 0.3681474998611116,
+      "unique": 0
+    }
+  ],
+  "factors": null,
+  "warnings": []
+}
